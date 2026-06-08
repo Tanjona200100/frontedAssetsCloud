@@ -408,7 +408,6 @@ export default function AssetsPanel() {
               style={{ background: 'rgba(0,0,0,.3)', border: '1px solid rgba(255,255,255,.1)', borderRadius: 6, padding: '4px 8px', color: 'white', fontSize: 12 }}
             >
               <option value="public">Public</option>
-              <option value="team">Équipe</option>
               <option value="private">Privé</option>
             </select>
           </div>
@@ -750,15 +749,7 @@ export default function AssetsPanel() {
                           />
                           <span>🔒 Privé</span>
                         </label>
-                        <label className="upload-radio">
-                          <input
-                            type="radio"
-                            value="team"
-                            checked={uploadVisibility === 'team'}
-                            onChange={(e) => setUploadVisibility(e.target.value)}
-                          />
-                          <span>👥 Équipe</span>
-                        </label>
+                     
                         <label className="upload-radio">
                           <input
                             type="radio"
