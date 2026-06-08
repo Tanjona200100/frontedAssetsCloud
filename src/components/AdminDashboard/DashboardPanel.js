@@ -1,4 +1,11 @@
-// components/AdminDashboard/DashboardPanel.jsx
+import { useState, useEffect } from 'react';
+
+
+const API_BASE = 'http://localhost:5000/api';
+
+// Récupérer le token
+const getToken = () => localStorage.getItem('token') || sessionStorage.getItem('token');
+
 const StatCard = ({ icon, value, label, sub, delta, deltaUp, color }) => {
   const getIcon = () => {
     switch (icon) {
@@ -100,44 +107,110 @@ const ActivityItem = ({ icon, text, time, iconBg, iconColor }) => {
 };
 
 const DashboardPanel = () => {
+  const [stats, setStats] = useState({
+    totals: { users: {}, assets: {} },
+    validation_rates: []
+  });
+  const [activities, setActivities] = useState([]);
+  const [monthlyUploads, setMonthlyUploads] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+
+  useEffect(() => {
+    fetchAllData();
+  }, []);
+
+  const fetchAllData = async () => {
+    try {
+      setLoading(true);
+      const token = getToken();
+
+      if (!token) {
+        setError('Non authentifié');
+        setLoading(false);
+        return;
+      }
+
+      const headers = { 'Authorization': `Bearer ${token}` };
+
+      // 1. Récupérer les stats
+      const statsRes = await fetch(`${API_BASE}/admin/stats`, { headers });
+      const statsData = await statsRes.json();
+      if (statsData.success) setStats(statsData.data);
+
+      // 2. Récupérer les activités récentes
+      const activitiesRes = await fetch(`${API_BASE}/admin/activities/recent?limit=5`, { headers });
+      const activitiesData = await activitiesRes.json();
+      if (activitiesData.success) setActivities(activitiesData.activities);
+
+      // 3. Récupérer les uploads mensuels
+      const monthlyRes = await fetch(`${API_BASE}/admin/stats/uploads-per-month`, { headers });
+      const monthlyData = await monthlyRes.json();
+      if (monthlyData.success) setMonthlyUploads(monthlyData.data);
+
+    } catch (err) {
+      console.error('Erreur:', err);
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Formater la taille
+  const formatBytes = (bytes) => {
+    if (bytes === 0) return '0 B';
+    const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(1024));
+    return parseFloat((bytes / Math.pow(1024, i)).toFixed(2)) + ' ' + sizes[i];
+  };
+
+  const totalUsers = stats.totals?.users?.total || 0;
+  const totalImages = stats.totals?.assets?.images || 0;
+  const totalVideos = stats.totals?.assets?.videos || 0;
+  const total3D = stats.totals?.assets?.models_3d || 0;
+  const totalSize = stats.totals?.assets?.total_size || 0;
+  const storagePercentage = (totalSize / (2 * 1024 * 1024 * 1024 * 1024)) * 100;
+
   return (
     <>
+      {error && (
+        <div style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid #EF4444', borderRadius: '12px', padding: '12px', marginBottom: '20px', color: '#EF4444' }}>
+          Erreur: {error}
+        </div>
+      )}
+
       <div className="stats-grid">
         <StatCard
           icon="users"
-          value="2 847"
+          value={loading ? "---" : totalUsers.toLocaleString()}
           label="Utilisateurs totaux"
-          sub="+34 ce mois-ci"
-          delta="+12%"
-          deltaUp={true}
+          sub={`${stats.totals?.users?.graphistes || 0} graphistes, ${stats.totals?.users?.developpeurs || 0} développeurs`}
           color="blue"
+          isLoading={loading}
         />
         <StatCard
           icon="images"
-          value="184K"
+          value={loading ? "---" : totalImages.toLocaleString()}
           label="Images stockées"
-          sub="2 430 cette semaine"
-          delta="+8%"
-          deltaUp={true}
+          sub={`${totalImages} fichiers`}
           color="green"
+          isLoading={loading}
         />
         <StatCard
           icon="videos"
-          value="12 480"
+          value={loading ? "---" : totalVideos.toLocaleString()}
           label="Vidéos stockées"
-          sub="148 cette semaine"
-          delta="-3%"
-          deltaUp={false}
+          sub={`${totalVideos} fichiers`}
           color="amber"
+          isLoading={loading}
         />
         <StatCard
           icon="3d"
-          value="3 261"
+          value={loading ? "---" : total3D.toLocaleString()}
           label="Fichiers 3D"
-          sub="87 cette semaine"
-          delta="+21%"
-          deltaUp={true}
+          sub={`${total3D} modèles`}
           color="purple"
+          isLoading={loading}
         />
       </div>
 
@@ -147,20 +220,19 @@ const DashboardPanel = () => {
           <span className="card-hint">Utilisé sur 2 TB alloués</span>
         </div>
         <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "6px" }}>
-          <span style={{ fontSize: "22px", fontFamily: "'Space Grotesk', sans-serif", fontWeight: "600", color: "var(--text)" }}>1.34 TB</span>
-          <span style={{ fontSize: "13px", color: "var(--text-muted)", alignSelf: "flex-end" }}>67% utilisé</span>
+          <span style={{ fontSize: "22px", fontFamily: "'Space Grotesk', sans-serif", fontWeight: "600", color: "var(--text)" }}>
+            {loading ? "---" : formatBytes(totalSize)}
+          </span>
+          <span style={{ fontSize: "13px", color: "var(--text-muted)", alignSelf: "flex-end" }}>
+            {Math.round(storagePercentage)}% utilisé
+          </span>
         </div>
         <div className="storage-bar">
-          <div className="storage-fill" style={{ width: "67%" }}></div>
-        </div>
-        <div style={{ display: "flex", gap: "18px", marginTop: "10px" }}>
-          <span style={{ fontSize: "12px", color: "var(--text-dim)" }}>Images <strong style={{ color: "var(--accent-blue)" }}>820 GB</strong></span>
-          <span style={{ fontSize: "12px", color: "var(--text-dim)" }}>Vidéos <strong style={{ color: "#F59E0B" }}>460 GB</strong></span>
-          <span style={{ fontSize: "12px", color: "var(--text-dim)" }}>3D <strong style={{ color: "#A78BFA" }}>60 GB</strong></span>
-          <span style={{ fontSize: "12px", color: "var(--text-dim)" }}>Autres <strong style={{ color: "var(--text-muted)" }}>0 GB</strong></span>
+          <div className="storage-fill" style={{ width: `${Math.min(storagePercentage, 100)}%` }}></div>
         </div>
       </div>
 
+      {/* Graphique des uploads mensuels */}
       <div className="charts-row">
         <div className="chart-card">
           <div className="card-header">
@@ -169,13 +241,13 @@ const DashboardPanel = () => {
           </div>
           <div className="chart-area">
             <div className="bar-chart">
-              {["Jan", "Fév", "Mar", "Avr", "Mai", "Juin"].map((month, i) => {
-                const heights = [55, 72, 61, 88, 78, 95];
-                const colors = i < 3 ? "blue-bar" : "green-bar";
+              {monthlyUploads.map((item, i) => {
+                const maxCount = Math.max(...monthlyUploads.map(m => m.count), 1);
+                const heightPercent = (item.count / maxCount) * 100;
                 return (
-                  <div key={month} className="bar-wrap">
-                    <div className={`bar ${colors}`} style={{ height: `${heights[i]}%` }}></div>
-                    <span className="bar-label">{month}</span>
+                  <div key={item.month} className="bar-wrap">
+                    <div className="bar blue-bar" style={{ height: `${Math.max(heightPercent, 5)}%` }}></div>
+                    <span className="bar-label">{item.month}</span>
                   </div>
                 );
               })}
@@ -189,55 +261,129 @@ const DashboardPanel = () => {
           </div>
           <div className="donut-wrap">
             <svg className="donut-svg" viewBox="0 0 100 100">
-              <circle cx="50" cy="50" r="38" fill="none" stroke="rgba(59,130,246,0.9)" strokeWidth="18" strokeDasharray="150 89" strokeDashoffset="25" strokeLinecap="round" />
-              <circle cx="50" cy="50" r="38" fill="none" stroke="rgba(245,158,11,0.85)" strokeWidth="18" strokeDasharray="62 177" strokeDashoffset="-125" strokeLinecap="round" />
-              <circle cx="50" cy="50" r="38" fill="none" stroke="rgba(139,92,246,0.85)" strokeWidth="18" strokeDasharray="27 212" strokeDashoffset="-187" strokeLinecap="round" />
-              <text x="50" y="47" textAnchor="middle" fill="#E2E8F0" fontSize="12" fontFamily="Space Grotesk, sans-serif" fontWeight="600">200K</text>
+              {!loading && (() => {
+                const total = stats.totals?.assets?.total || 0;
+                const images = stats.totals?.assets?.images || 0;
+                const videos = stats.totals?.assets?.videos || 0;
+                const models3d = stats.totals?.assets?.models_3d || 0;
+
+                if (total === 0) {
+                  return (
+                    <circle cx="50" cy="50" r="38" fill="none" stroke="rgba(100,116,139,0.3)" strokeWidth="18" strokeDasharray="239" strokeLinecap="round" />
+                  );
+                }
+
+                // Circonférence = 2 * π * r = 2 * 3.14159 * 38 ≈ 238.76
+                const circumference = 239;
+
+                // Calculer les proportions
+                const imagesPercent = images / total;
+                const videosPercent = videos / total;
+                const modelsPercent = models3d / total;
+
+                // Calculer les dasharrays et offsets
+                const imagesDash = imagesPercent * circumference;
+                const videosDash = videosPercent * circumference;
+                const modelsDash = modelsPercent * circumference;
+
+                // Calculer les offsets
+                const imagesOffset = 25;
+                const videosOffset = imagesOffset - imagesDash;
+                const modelsOffset = videosOffset - videosDash;
+
+                return (
+                  <>
+                    {/* Images - Bleu */}
+                    {images > 0 && (
+                      <circle
+                        cx="50" cy="50" r="38"
+                        fill="none"
+                        stroke="rgba(59,130,246,0.9)"
+                        strokeWidth="18"
+                        strokeDasharray={`${imagesDash} ${circumference}`}
+                        strokeDashoffset={imagesOffset}
+                        strokeLinecap="round"
+                      />
+                    )}
+                    {/* Vidéos - Orange */}
+                    {videos > 0 && (
+                      <circle
+                        cx="50" cy="50" r="38"
+                        fill="none"
+                        stroke="rgba(245,158,11,0.85)"
+                        strokeWidth="18"
+                        strokeDasharray={`${videosDash} ${circumference}`}
+                        strokeDashoffset={videosOffset}
+                        strokeLinecap="round"
+                      />
+                    )}
+                    {/* 3D Models - Violet */}
+                    {models3d > 0 && (
+                      <circle
+                        cx="50" cy="50" r="38"
+                        fill="none"
+                        stroke="rgba(139,92,246,0.85)"
+                        strokeWidth="18"
+                        strokeDasharray={`${modelsDash} ${circumference}`}
+                        strokeDashoffset={modelsOffset}
+                        strokeLinecap="round"
+                      />
+                    )}
+                  </>
+                );
+              })()}
+              <text x="50" y="47" textAnchor="middle" fill="#E2E8F0" fontSize="12" fontFamily="Space Grotesk, sans-serif" fontWeight="600">
+                {loading ? "---" : (stats.totals?.assets?.total || 0).toLocaleString()}
+              </text>
               <text x="50" y="58" textAnchor="middle" fill="#9CA3AF" fontSize="7">assets</text>
             </svg>
             <div className="donut-legend">
-              <div className="legend-item"><span className="legend-dot" style={{ background: "#3B82F6" }}></span><span className="legend-label">Images</span><span className="legend-val">184K</span></div>
-              <div className="legend-item"><span className="legend-dot" style={{ background: "#F59E0B" }}></span><span className="legend-label">Vidéos</span><span className="legend-val">12.4K</span></div>
-              <div className="legend-item"><span className="legend-dot" style={{ background: "#8B5CF6" }}></span><span className="legend-label">Fichiers 3D</span><span className="legend-val">3.2K</span></div>
+              <div className="legend-item">
+                <span className="legend-dot" style={{ background: "#3B82F6" }}></span>
+                <span className="legend-label">Images</span>
+                <span className="legend-val">{loading ? "---" : (stats.totals?.assets?.images || 0).toLocaleString()}</span>
+              </div>
+              <div className="legend-item">
+                <span className="legend-dot" style={{ background: "#F59E0B" }}></span>
+                <span className="legend-label">Vidéos</span>
+                <span className="legend-val">{loading ? "---" : (stats.totals?.assets?.videos || 0).toLocaleString()}</span>
+              </div>
+              <div className="legend-item">
+                <span className="legend-dot" style={{ background: "#8B5CF6" }}></span>
+                <span className="legend-label">Fichiers 3D</span>
+                <span className="legend-val">{loading ? "---" : (stats.totals?.assets?.models_3d || 0).toLocaleString()}</span>
+              </div>
             </div>
           </div>
         </div>
       </div>
 
+      {/* Activité récente */}
       <div className="activity-card">
         <div className="card-header">
           <span className="card-title">Activité récente</span>
-          <span className="card-hint">Dernières 24h</span>
         </div>
         <div className="activity-list">
-          <ActivityItem
-            icon="upload"
-            text={<><strong>Marie Laurent</strong> a uploadé 14 nouvelles images</>}
-            time="Il y a 12 min"
-            iconBg="rgba(16,185,129,0.15)"
-            iconColor="var(--accent-green)"
-          />
-          <ActivityItem
-            icon="user"
-            text={<><strong>Thomas Remy</strong> a créé un nouveau compte</>}
-            time="Il y a 34 min"
-            iconBg="rgba(59,130,246,0.15)"
-            iconColor="var(--accent-blue)"
-          />
-          <ActivityItem
-            icon="delete"
-            text={<><strong>Admin</strong> a supprimé 3 assets non conformes</>}
-            time="Il y a 1h 20min"
-            iconBg="rgba(239,68,68,0.15)"
-            iconColor="var(--red)"
-          />
-          <ActivityItem
-            icon="role"
-            text={<><strong>Lucas Morel</strong> a changé de rôle : Graphiste → Développeur</>}
-            time="Il y a 2h"
-            iconBg="rgba(245,158,11,0.15)"
-            iconColor="#F59E0B"
-          />
+          {activities.map((activity, idx) => {
+            let icon = "upload", iconBg = "rgba(16,185,129,0.15)", iconColor = "var(--accent-green)";
+            switch (activity.action) {
+              case 'upload': icon = "upload"; break;
+              case 'download': icon = "user"; iconBg = "rgba(59,130,246,0.15)"; iconColor = "var(--accent-blue)"; break;
+              case 'delete': icon = "delete"; iconBg = "rgba(239,68,68,0.15)"; iconColor = "var(--red)"; break;
+              default: break;
+            }
+            const time = new Date(activity.created_at).toLocaleString('fr-FR');
+            return (
+              <ActivityItem
+                key={idx}
+                icon={icon}
+                text={<><strong>{activity.user_name || 'Utilisateur'}</strong> {activity.description || activity.action}</>}
+                time={time}
+                iconBg={iconBg}
+                iconColor={iconColor}
+              />
+            );
+          })}
         </div>
       </div>
     </>
