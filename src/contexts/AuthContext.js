@@ -131,68 +131,57 @@ const login = async (email, password) => {
     }
   }, [API_BASE_URL]);
 
-  // Fonction d'inscription - CORRIGÉE pour accepter FormData ou JSON
-  const register = async (userData) => {
-    try {
-      console.log("📤 Envoi des données:", userData);
-      
-      // Vérifier si c'est du FormData ou un objet JSON
-      const isFormData = userData instanceof FormData;
-      
-      let body;
-      let headers = {};
-      
-      if (isFormData) {
-        // Pour FormData, ne pas définir Content-Type (le navigateur le fait automatiquement)
-        body = userData;
-        console.log("📎 Envoi en tant que FormData");
-      } else {
-        // Pour JSON
-        headers['Content-Type'] = 'application/json';
-        body = JSON.stringify(userData);
-        console.log("📦 Envoi en tant que JSON");
-      }
-      
-      const response = await fetch(`${API_BASE_URL}/auth/register`, {
-        method: 'POST',
-        headers: headers,
-        body: body,
-      });
+// Fonction d'inscription corrigée
+const register = async (userData) => {
+  try {
+    console.log("📤 Envoi des données:", { 
+      ...userData, 
+      profile_image_url: userData.profile_image_url ? "✅ Présent (base64)" : "❌ Absent" 
+    });
+    
+    const response = await fetch(`${API_BASE_URL}/auth/register`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(userData),
+    });
 
-      const data = await response.json();
-      console.log("📥 Réponse complète du serveur:", data);
+    const data = await response.json();
+    console.log("📥 Réponse du serveur:", data);
+    
+    if (response.ok && data.success) {
+      const returnedUser = data.user || data.data || {};
       
-      // Gérer les erreurs de validation
-      if (data.errors) {
-        const errorMessages = data.errors.map(err => `${err.path}: ${err.msg}`).join(", ");
-        return { 
-          success: false, 
-          error: errorMessages
-        };
+      // 🔥 Mettre à jour localStorage avec l'utilisateur
+      if (returnedUser.id) {
+        localStorage.setItem('user', JSON.stringify(returnedUser));
       }
       
-      // Succès
-      if (response.ok && data.success) {
-        return { 
-          success: true, 
-          message: data.message || "Inscription réussie !",
-          user: data.user
-        };
-      }
-      
-      // Autre erreur
       return { 
-        success: false, 
-        error: data.error || 'Erreur lors de l\'inscription' 
-      };
-    } catch (error) {
-      console.error("❌ Erreur réseau:", error);
-      return { 
-        success: false, 
-        error: 'Erreur de connexion au serveur. Vérifiez que le backend est démarré sur le port 5000.' 
+        success: true, 
+        message: data.message || "Inscription réussie !",
+        user: returnedUser
       };
     }
-  };
+    
+    if (data.errors) {
+      const errorMessages = data.errors.map(err => `${err.path}: ${err.msg}`).join(", ");
+      return { success: false, error: errorMessages };
+    }
+    
+    return { 
+      success: false, 
+      error: data.error || 'Erreur lors de l\'inscription' 
+    };
+  } catch (error) {
+    console.error("❌ Erreur réseau:", error);
+    return { 
+      success: false, 
+      error: 'Erreur de connexion au serveur.' 
+    };
+  }
+};
 
   const value = {
     user,

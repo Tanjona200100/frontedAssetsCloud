@@ -1,6 +1,7 @@
 // src/components/UserDashboard/AssetsPanel.jsx
 import React, { useContext, useState, useEffect, useCallback } from 'react';
 import { UserContext } from '../../pages/UserDashboard';
+import ModelViewer from './ModelViewer';
 
 // Configuration API depuis les variables d'environnement
 const API_BASE_URL = process.env.REACT_APP_API_BASE_URL || process.env.REACT_APP_API_URL || 'http://192.168.2.160:5000/api';
@@ -13,7 +14,6 @@ const getUserIdFromToken = () => {
   try {
     const payload = JSON.parse(atob(token.split('.')[1]));
     const userId = payload.user_id || payload.sub || payload.id || null;
-    console.log('User ID from token:', userId);
     return userId;
   } catch (e) {
     console.error('Error decoding token:', e);
@@ -67,6 +67,10 @@ export default function AssetsPanel() {
   const [showConfirmModal, setShowConfirmModal] = useState(false);
   const [assetToDelete, setAssetToDelete] = useState(null);
   
+  // État pour la vue 3D
+  const [showModelViewer, setShowModelViewer] = useState(false);
+  const [selectedModel, setSelectedModel] = useState(null);
+  
   // Vérifier l'authentification au chargement
   useEffect(() => {
     const userId = getUserIdFromToken();
@@ -80,20 +84,33 @@ export default function AssetsPanel() {
   // Mapping extension -> file_type pour l'API
   const getFileTypeFromExt = (extension) => {
     const typeMap = {
-      // Images
       'PNG': 'image', 'JPG': 'image', 'JPEG': 'image', 'GIF': 'image', 'WEBP': 'image',
-      // Vidéos
       'MP4': 'video', 'MOV': 'video', 'AVI': 'video', 'MKV': 'video',
-      // 3D
-      'GLB': '3d_model', 'FBX': '3d_model', 'OBJ': '3d_model',
-      // Archives
+      'GLB': '3d_model', 'GLTF': '3d_model', 'FBX': '3d_model', 'OBJ': '3d_model',
       'ZIP': 'archive', 'RAR': 'archive', '7Z': 'archive',
-      // Documents
       'PSD': 'document', 'AI': 'document', 'JSON': 'document', 'PDF': 'document',
       'DOC': 'document', 'DOCX': 'document'
     };
     return typeMap[extension.toUpperCase()] || 'document';
   };
+  
+  // Vérifier si c'est un modèle 3D
+const is3DModel = (asset) => {
+  const ext = asset.ext?.toLowerCase().replace(/^\./, ''); // Nettoyer le point
+  const fileType = asset.file_type?.toLowerCase();
+  const name = asset.name?.toLowerCase();
+  
+  // Formats 3D supportés
+  const supported3DFormats = ['glb', 'gltf', 'fbx', 'obj', 'stl', 'dae', '3ds'];
+  
+  const is3DExtension = supported3DFormats.includes(ext);
+  const is3DFileType = fileType === '3d_model';
+  const is3DName = supported3DFormats.some(format => name?.endsWith(`.${format}`));
+  
+  console.log(`Asset ${asset.id} - is3D:`, { is3DExtension, is3DFileType, is3DName, ext });
+  
+  return is3DExtension || is3DFileType || is3DName;
+};
   
   // Récupération des assets
   const fetchAssets = useCallback(async () => {
@@ -111,7 +128,6 @@ export default function AssetsPanel() {
       if (filters.tags) params.append('tags', filters.tags);
       
       const url = `${API_BASE_URL}/assets?${params.toString()}`;
-      console.log('Fetching assets from:', url);
       
       const response = await fetch(url, {
         method: 'GET',
@@ -125,15 +141,7 @@ export default function AssetsPanel() {
         if (response.status === 401) {
           throw new Error('Non autorisé - Veuillez vous reconnecter');
         }
-        if (response.status === 404) {
-          throw new Error('API non trouvée - Vérifiez l\'URL');
-        }
         throw new Error(`Erreur HTTP: ${response.status}`);
-      }
-      
-      const contentType = response.headers.get('content-type');
-      if (!contentType || !contentType.includes('application/json')) {
-        throw new Error('La réponse du serveur n\'est pas au format JSON');
       }
       
       const data = await response.json();
@@ -168,7 +176,6 @@ export default function AssetsPanel() {
       return;
     }
     
-    // Vérifier la taille de chaque fichier
     const oversizedFiles = selectedFiles.filter(f => f.size > 500 * 1024 * 1024);
     if (oversizedFiles.length > 0) {
       setError(`${oversizedFiles.length} fichier(s) dépassent la limite de 500 MB`);
@@ -182,24 +189,17 @@ export default function AssetsPanel() {
     try {
       const formData = new FormData();
       
-      // Ajouter tous les fichiers
       selectedFiles.forEach(file => {
         formData.append('files', file);
       });
       
-      // Ajouter les métadonnées communes
       if (uploadVisibility) formData.append('visibility', uploadVisibility);
       if (uploadCategories) formData.append('categories', uploadCategories);
       if (uploadTags) formData.append('tags', uploadTags);
-      
-      // Note: title et description sont individuels par fichier
-      // Pour l'upload multiple, on peut soit les ignorer soit les appliquer à tous
       if (uploadTitle) formData.append('default_title', uploadTitle);
       if (uploadDescription) formData.append('default_description', uploadDescription);
       
       const url = `${API_BASE_URL}/assets/upload-multiple`;
-      console.log('Uploading multiple files to:', url);
-      console.log(`Files: ${selectedFiles.length} files`);
       
       const response = await fetch(url, {
         method: 'POST',
@@ -214,10 +214,6 @@ export default function AssetsPanel() {
         throw new Error(`Upload échoué (${response.status}): ${errorText}`);
       }
       
-      const result = await response.json();
-      console.log('Upload success:', result);
-      
-      // Réinitialiser et rafraîchir
       resetUploadForm();
       setShowUploadModal(false);
       await fetchAssets();
@@ -230,7 +226,6 @@ export default function AssetsPanel() {
     }
   };
   
-  // Gestion de la sélection des fichiers
   const handleFileSelect = (e) => {
     const files = Array.from(e.target.files);
     if (files.length > 10) {
@@ -240,7 +235,6 @@ export default function AssetsPanel() {
     setSelectedFiles(files);
     setError(null);
     
-    // Simuler la progression pour l'affichage
     const progress = {};
     files.forEach((file, index) => {
       progress[index] = 0;
@@ -248,7 +242,6 @@ export default function AssetsPanel() {
     setUploadProgress(progress);
   };
   
-  // Supprimer un fichier de la sélection
   const removeFile = (index) => {
     setSelectedFiles(prev => prev.filter((_, i) => i !== index));
   };
@@ -263,7 +256,6 @@ export default function AssetsPanel() {
     setUploadProgress({});
   };
   
-  // Suppression d'un asset
   const handleDelete = async () => {
     if (!assetToDelete) return;
     
@@ -290,7 +282,6 @@ export default function AssetsPanel() {
     }
   };
   
-  // Téléchargement d'un asset
   const handleDownload = async (assetId, assetName) => {
     try {
       const response = await fetch(`${API_BASE_URL}/assets/${assetId}/download`, {
@@ -319,7 +310,38 @@ export default function AssetsPanel() {
     }
   };
   
-  // Formatage de la taille
+const openAssetPreview = (asset) => {
+  if (is3DModel(asset)) {
+    const token = localStorage.getItem('token');
+    if (!token) { setError('Vous devez être connecté'); return; }
+
+    // Try every possible source for the extension
+    let cleanExt = (asset.ext || asset.file_ext || asset.extension || '')
+      .replace(/^\./, '')
+      .toLowerCase();
+
+    // If still empty, infer from asset.name or asset.title
+    if (!cleanExt) {
+      const nameSource = asset.name || asset.title || '';
+      const dotIdx = nameSource.lastIndexOf('.');
+      if (dotIdx !== -1) cleanExt = nameSource.slice(dotIdx + 1).toLowerCase();
+    }
+
+    // If still empty but file_type is 3d_model, default to glb
+    if (!cleanExt && asset.file_type === '3d_model') cleanExt = 'glb';
+
+    let fileName = asset.title || asset.name || 'model';
+    if (cleanExt && !fileName.toLowerCase().endsWith(`.${cleanExt}`)) {
+      fileName = `${fileName}.${cleanExt}`;
+    }
+
+    setSelectedModel({ id: asset.id, name: fileName, token, ext: cleanExt });
+    setShowModelViewer(true);
+  } else {
+    openPreview(asset.title || asset.name);
+  }
+};
+  
   const formatSize = (bytes) => {
     if (!bytes && bytes !== 0) return '0 MB';
     if (bytes === 0) return '0 MB';
@@ -331,14 +353,12 @@ export default function AssetsPanel() {
     return `${formattedSize} ${sizes[i]}`;
   };
   
-  // Formatage de la date
   const formatDate = (dateString) => {
     if (!dateString) return 'Date inconnue';
     const date = new Date(dateString);
     return date.toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' });
   };
   
-  // Gestion des changements
   const handlePageChange = (newPage) => {
     if (newPage >= 1 && newPage <= totalPages) {
       setPage(newPage);
@@ -358,19 +378,16 @@ export default function AssetsPanel() {
     }, 500));
   };
   
-  // Chargement initial
   useEffect(() => {
     fetchAssets();
   }, [fetchAssets]);
   
-  // Cleanup
   useEffect(() => {
     return () => {
       if (searchTimeout) clearTimeout(searchTimeout);
     };
   }, [searchTimeout]);
   
-  // Composant de chargement
   if (loading && assets.length === 0) {
     return (
       <div className="tbl-wrap" style={{ background: 'rgba(12,22,40,.8)', border: '1px solid rgba(255,255,255,.06)', borderRadius: 12, overflow: 'hidden', padding: '40px', textAlign: 'center' }}>
@@ -451,12 +468,24 @@ export default function AssetsPanel() {
                 <tr key={asset.id} style={{ borderBottom: '1px solid rgba(255,255,255,.04)' }}>
                   <td style={{ padding: '12px 18px' }}>
                     <div className="file-cell" style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                      <div className={`file-icon ${asset.icon || asset.ext?.toLowerCase()}`} style={{ width: 32, height: 32, background: 'rgba(255,255,255,.05)', borderRadius: 6, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10, fontWeight: 600, color: 'var(--muted)' }}>
-                        {asset.ext}
+                      <div className={`file-icon ${asset.icon || asset.ext?.toLowerCase()}`} style={{ 
+                        width: 32, 
+                        height: 32, 
+                        background: is3DModel(asset) ? 'rgba(139,92,246,0.2)' : 'rgba(255,255,255,.05)', 
+                        borderRadius: 6, 
+                        display: 'flex', 
+                        alignItems: 'center', 
+                        justifyContent: 'center', 
+                        fontSize: 10, 
+                        fontWeight: 600, 
+                        color: is3DModel(asset) ? '#A78BFA' : 'var(--muted)'
+                      }}>
+                        {is3DModel(asset) ? '🎨' : asset.ext}
                       </div>
                       <div>
                         <div className="fn" style={{ fontWeight: 500, fontSize: 13, color: 'white' }}>{asset.title || asset.name}</div>
                         {asset.description && <div className="fm" style={{ fontSize: 10, color: 'var(--muted)' }}>{asset.description}</div>}
+                        {is3DModel(asset) && <div style={{ fontSize: 9, color: '#A78BFA', marginTop: 2 }}>🎨 Modèle 3D</div>}
                       </div>
                     </div>
                   </td>
@@ -469,13 +498,27 @@ export default function AssetsPanel() {
                   <td style={{ padding: '12px 18px' }}>
                     <button 
                       className="action-btn" 
-                      onClick={() => openPreview(asset.title || asset.name)}
-                      style={{ background: 'transparent', border: 'none', color: 'var(--muted)', cursor: 'pointer', padding: 4 }}
+                      onClick={() => openAssetPreview(asset)}
+                      style={{ 
+                        background: is3DModel(asset) ? 'rgba(139,92,246,0.2)' : 'transparent', 
+                        border: 'none', 
+                        color: is3DModel(asset) ? '#A78BFA' : 'var(--muted)', 
+                        cursor: 'pointer', 
+                        padding: 4,
+                        borderRadius: 4
+                      }}
+                      title={is3DModel(asset) ? 'Visualisation 3D' : 'Aperçu'}
                     >
-                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="14" height="14">
-                        <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
-                        <circle cx="12" cy="12" r="3" />
-                      </svg>
+                      {is3DModel(asset) ? (
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="14" height="14">
+                          <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" />
+                        </svg>
+                      ) : (
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="14" height="14">
+                          <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+                          <circle cx="12" cy="12" r="3" />
+                        </svg>
+                      )}
                     </button>
                   </td>
                   <td style={{ padding: '12px 18px' }}>
@@ -524,58 +567,27 @@ export default function AssetsPanel() {
               {totalAssets > 0 ? ((page - 1) * 20) + 1 : 0}–{Math.min(page * 20, totalAssets)} / {totalAssets}
             </span>
             <div className="pag-btns" style={{ display: 'flex', gap: 3 }}>
-              <button 
-                className="pb" 
-                onClick={() => handlePageChange(page - 1)}
-                disabled={page === 1}
-                style={{ width: 27, height: 27, borderRadius: 5, border: '1px solid rgba(255,255,255,.06)', background: 'transparent', cursor: page === 1 ? 'not-allowed' : 'pointer', opacity: page === 1 ? 0.5 : 1, color: 'white' }}
-              >‹</button>
-              
+              <button className="pb" onClick={() => handlePageChange(page - 1)} disabled={page === 1} style={{ width: 27, height: 27, borderRadius: 5, border: '1px solid rgba(255,255,255,.06)', background: 'transparent', cursor: page === 1 ? 'not-allowed' : 'pointer', opacity: page === 1 ? 0.5 : 1, color: 'white' }}>‹</button>
               {[...Array(Math.min(5, totalPages))].map((_, i) => {
                 let pageNum;
                 if (totalPages <= 5) pageNum = i + 1;
                 else if (page <= 3) pageNum = i + 1;
                 else if (page >= totalPages - 2) pageNum = totalPages - 4 + i;
                 else pageNum = page - 2 + i;
-                
                 if (pageNum > totalPages) return null;
-                
                 return (
-                  <button 
-                    key={i}
-                    className={`pb ${pageNum === page ? 'on' : ''}`}
-                    onClick={() => handlePageChange(pageNum)}
-                    style={{ 
-                      width: 27, 
-                      height: 27, 
-                      borderRadius: 5, 
-                      border: '1px solid rgba(255,255,255,.06)', 
-                      background: pageNum === page ? 'rgba(59,130,246,.15)' : 'transparent',
-                      borderColor: pageNum === page ? 'rgba(59,130,246,.4)' : undefined,
-                      color: pageNum === page ? 'var(--blue)' : 'white',
-                      cursor: 'pointer'
-                    }}
-                  >{pageNum}</button>
+                  <button key={i} className={`pb ${pageNum === page ? 'on' : ''}`} onClick={() => handlePageChange(pageNum)} style={{ width: 27, height: 27, borderRadius: 5, border: '1px solid rgba(255,255,255,.06)', background: pageNum === page ? 'rgba(59,130,246,.15)' : 'transparent', borderColor: pageNum === page ? 'rgba(59,130,246,.4)' : undefined, color: pageNum === page ? 'var(--blue)' : 'white', cursor: 'pointer' }}>{pageNum}</button>
                 );
               })}
-              
-              <button 
-                className="pb" 
-                onClick={() => handlePageChange(page + 1)}
-                disabled={page === totalPages}
-                style={{ width: 27, height: 27, borderRadius: 5, border: '1px solid rgba(255,255,255,.06)', background: 'transparent', cursor: page === totalPages ? 'not-allowed' : 'pointer', opacity: page === totalPages ? 0.5 : 1, color: 'white' }}
-              >›</button>
+              <button className="pb" onClick={() => handlePageChange(page + 1)} disabled={page === totalPages} style={{ width: 27, height: 27, borderRadius: 5, border: '1px solid rgba(255,255,255,.06)', background: 'transparent', cursor: page === totalPages ? 'not-allowed' : 'pointer', opacity: page === totalPages ? 0.5 : 1, color: 'white' }}>›</button>
             </div>
           </div>
         )}
       </div>
       
-      {/* Modal d'upload multiple - Design amélioré */}
+      {/* Modal d'upload multiple */}
       {showUploadModal && (
-        <div className="modal-overlay" onClick={() => {
-          setShowUploadModal(false);
-          resetUploadForm();
-        }}>
+        <div className="modal-overlay" onClick={() => { setShowUploadModal(false); resetUploadForm(); }}>
           <div className="upload-modal-container" onClick={(e) => e.stopPropagation()}>
             <div className="upload-modal-header">
               <div className="upload-modal-icon">
@@ -589,35 +601,12 @@ export default function AssetsPanel() {
                 <h3 className="upload-modal-title">Uploader des assets</h3>
                 <p className="upload-modal-subtitle">Ajoutez jusqu'à 10 fichiers • Max 500 MB par fichier</p>
               </div>
-              <button className="upload-modal-close" onClick={() => {
-                setShowUploadModal(false);
-                resetUploadForm();
-              }}>×</button>
+              <button className="upload-modal-close" onClick={() => { setShowUploadModal(false); resetUploadForm(); }}>×</button>
             </div>
-
             <form onSubmit={handleMultipleUpload}>
               <div className="upload-modal-body">
-                {/* Zone de drop */}
-                <div className="upload-dropzone" 
-                  onDragOver={(e) => e.preventDefault()}
-                  onDrop={(e) => {
-                    e.preventDefault();
-                    const files = Array.from(e.dataTransfer.files);
-                    if (files.length > 0 && files.length <= 10) {
-                      setSelectedFiles(files);
-                    } else if (files.length > 10) {
-                      setError("Maximum 10 fichiers");
-                    }
-                  }}
-                >
-                  <input 
-                    type="file" 
-                    id="file-upload-input"
-                    multiple
-                    onChange={handleFileSelect}
-                    style={{ display: 'none' }}
-                    accept="image/*,video/*,.glb,.fbx,.obj,.zip,.rar,.7z,.psd,.ai,.json,.pdf,.doc,.docx"
-                  />
+                <div className="upload-dropzone" onDragOver={(e) => e.preventDefault()} onDrop={(e) => { e.preventDefault(); const files = Array.from(e.dataTransfer.files); if (files.length > 0 && files.length <= 10) { setSelectedFiles(files); } else if (files.length > 10) { setError("Maximum 10 fichiers"); } }}>
+                  <input type="file" id="file-upload-input" multiple onChange={handleFileSelect} style={{ display: 'none' }} accept="image/*,video/*,.glb,.gltf,.fbx,.obj,.zip,.rar,.7z,.psd,.ai,.json,.pdf,.doc,.docx" />
                   <label htmlFor="file-upload-input" className="upload-dropzone-label">
                     <div className="upload-dropzone-icon">
                       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" width="32" height="32">
@@ -627,45 +616,24 @@ export default function AssetsPanel() {
                       </svg>
                     </div>
                     <div className="upload-dropzone-title">Cliquez ou glissez-déposez</div>
-                    <div className="upload-dropzone-hint">PNG, JPG, MP4, GLB, ZIP, PSD, AI, PDF...</div>
+                    <div className="upload-dropzone-hint">PNG, JPG, MP4, GLB, FBX, OBJ, ZIP, PSD, AI, PDF...</div>
                   </label>
                 </div>
-
-                {/* Liste des fichiers sélectionnés */}
                 {selectedFiles.length > 0 && (
                   <div className="upload-files-list">
                     <div className="upload-files-header">
                       <span className="upload-files-count">{selectedFiles.length} fichier(s) sélectionné(s)</span>
-                      <button 
-                        type="button" 
-                        className="upload-files-clear"
-                        onClick={() => setSelectedFiles([])}
-                      >
-                        Tout effacer
-                      </button>
+                      <button type="button" className="upload-files-clear" onClick={() => setSelectedFiles([])}>Tout effacer</button>
                     </div>
                     <div className="upload-files-grid">
                       {selectedFiles.map((file, index) => (
                         <div key={index} className="upload-file-item">
-                          <div className="upload-file-icon">
-                            {file.type.startsWith('image/') ? '🖼️' :
-                             file.type.startsWith('video/') ? '🎬' :
-                             file.name.endsWith('.glb') || file.name.endsWith('.fbx') || file.name.endsWith('.obj') ? '🎨' :
-                             file.name.endsWith('.zip') || file.name.endsWith('.rar') ? '📦' :
-                             file.name.endsWith('.psd') || file.name.endsWith('.ai') ? '🎯' :
-                             '📄'}
-                          </div>
+                          <div className="upload-file-icon">{file.type.startsWith('image/') ? '🖼️' : file.type.startsWith('video/') ? '🎬' : file.name.endsWith('.glb') || file.name.endsWith('.gltf') || file.name.endsWith('.fbx') || file.name.endsWith('.obj') ? '🎨' : file.name.endsWith('.zip') || file.name.endsWith('.rar') ? '📦' : file.name.endsWith('.psd') || file.name.endsWith('.ai') ? '🎯' : '📄'}</div>
                           <div className="upload-file-info">
-                            <div className="upload-file-name" title={file.name}>
-                              {file.name.length > 30 ? file.name.substring(0, 27) + '...' : file.name}
-                            </div>
+                            <div className="upload-file-name" title={file.name}>{file.name.length > 30 ? file.name.substring(0, 27) + '...' : file.name}</div>
                             <div className="upload-file-size">{formatSize(file.size)}</div>
                           </div>
-                          <button
-                            type="button"
-                            className="upload-file-remove"
-                            onClick={() => removeFile(index)}
-                          >
+                          <button type="button" className="upload-file-remove" onClick={() => removeFile(index)}>
                             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="14" height="14">
                               <line x1="18" y1="6" x2="6" y2="18" />
                               <line x1="6" y1="6" x2="18" y2="18" />
@@ -676,158 +644,42 @@ export default function AssetsPanel() {
                     </div>
                   </div>
                 )}
-
-                {/* Métadonnées */}
                 <div className="upload-metadata">
                   <div className="upload-metadata-row">
                     <div className="upload-metadata-field">
-                      <label className="upload-label">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" width="14" height="14">
-                          <path d="M20 12v8H4v-8M12 2v12m0 0-3-3m3 3 3-3" />
-                        </svg>
-                        Titre par défaut
-                      </label>
-                      <input 
-                        type="text" 
-                        className="upload-input"
-                        value={uploadTitle}
-                        onChange={(e) => setUploadTitle(e.target.value)}
-                        placeholder="Optionnel - Appliqué à tous les fichiers"
-                      />
+                      <label className="upload-label"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" width="14" height="14"><path d="M20 12v8H4v-8M12 2v12m0 0-3-3m3 3 3-3" /></svg>Titre par défaut</label>
+                      <input type="text" className="upload-input" value={uploadTitle} onChange={(e) => setUploadTitle(e.target.value)} placeholder="Optionnel - Appliqué à tous les fichiers" />
                     </div>
-                    
                     <div className="upload-metadata-field">
-                      <label className="upload-label">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" width="14" height="14">
-                          <path d="M4 4h16v16H4zM9 9h6v6H9z" />
-                        </svg>
-                        Tags
-                      </label>
-                      <input 
-                        type="text" 
-                        className="upload-input"
-                        value={uploadTags}
-                        onChange={(e) => setUploadTags(e.target.value)}
-                        placeholder="ex: 3d, design, ui-kit"
-                      />
+                      <label className="upload-label"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" width="14" height="14"><path d="M4 4h16v16H4zM9 9h6v6H9z" /></svg>Tags</label>
+                      <input type="text" className="upload-input" value={uploadTags} onChange={(e) => setUploadTags(e.target.value)} placeholder="ex: 3d, design, ui-kit" />
                     </div>
                   </div>
-
                   <div className="upload-metadata-row">
                     <div className="upload-metadata-field">
-                      <label className="upload-label">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" width="14" height="14">
-                          <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
-                          <circle cx="12" cy="7" r="4" />
-                        </svg>
-                        Description
-                      </label>
-                      <textarea 
-                        className="upload-textarea"
-                        rows="2"
-                        value={uploadDescription}
-                        onChange={(e) => setUploadDescription(e.target.value)}
-                        placeholder="Optionnelle - Description commune à tous les fichiers"
-                      />
+                      <label className="upload-label"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" width="14" height="14"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" /><circle cx="12" cy="7" r="4" /></svg>Description</label>
+                      <textarea className="upload-textarea" rows="2" value={uploadDescription} onChange={(e) => setUploadDescription(e.target.value)} placeholder="Optionnelle - Description commune à tous les fichiers" />
                     </div>
-                    
                     <div className="upload-metadata-field">
-                      <label className="upload-label">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" width="14" height="14">
-                          <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
-                          <circle cx="12" cy="12" r="3" />
-                        </svg>
-                        Visibilité
-                      </label>
+                      <label className="upload-label"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" width="14" height="14"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" /><circle cx="12" cy="12" r="3" /></svg>Visibilité</label>
                       <div className="upload-visibility-options">
-                        <label className="upload-radio">
-                          <input
-                            type="radio"
-                            value="private"
-                            checked={uploadVisibility === 'private'}
-                            onChange={(e) => setUploadVisibility(e.target.value)}
-                          />
-                          <span>🔒 Privé</span>
-                        </label>
-                     
-                        <label className="upload-radio">
-                          <input
-                            type="radio"
-                            value="public"
-                            checked={uploadVisibility === 'public'}
-                            onChange={(e) => setUploadVisibility(e.target.value)}
-                          />
-                          <span>🌍 Public</span>
-                        </label>
+                        <label className="upload-radio"><input type="radio" value="private" checked={uploadVisibility === 'private'} onChange={(e) => setUploadVisibility(e.target.value)} /><span>🔒 Privé</span></label>
+                        <label className="upload-radio"><input type="radio" value="public" checked={uploadVisibility === 'public'} onChange={(e) => setUploadVisibility(e.target.value)} /><span>🌍 Public</span></label>
                       </div>
                     </div>
                   </div>
-
                   <div className="upload-metadata-field">
-                    <label className="upload-label">
-                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" width="14" height="14">
-                        <path d="M20 7h-4.18A3 3 0 0 0 16 5.18V4a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2z" />
-                      </svg>
-                      Catégories (UUIDs)
-                    </label>
-                    <input 
-                      type="text" 
-                      className="upload-input"
-                      value={uploadCategories}
-                      onChange={(e) => setUploadCategories(e.target.value)}
-                      placeholder="uuid1, uuid2, uuid3"
-                    />
+                    <label className="upload-label"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" width="14" height="14"><path d="M20 7h-4.18A3 3 0 0 0 16 5.18V4a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2z" /></svg>Catégories (UUIDs)</label>
+                    <input type="text" className="upload-input" value={uploadCategories} onChange={(e) => setUploadCategories(e.target.value)} placeholder="uuid1, uuid2, uuid3" />
                     <div className="upload-hint">IDs des catégories séparés par des virgules</div>
                   </div>
                 </div>
-
-                {/* Message d'erreur */}
-                {error && (
-                  <div className="upload-error">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="16" height="16">
-                      <circle cx="12" cy="12" r="10" />
-                      <line x1="12" y1="8" x2="12" y2="12" />
-                      <line x1="12" y1="16" x2="12.01" y2="16" />
-                    </svg>
-                    {error}
-                  </div>
-                )}
+                {error && <div className="upload-error"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="16" height="16"><circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="16" x2="12.01" y2="16" /></svg>{error}</div>}
               </div>
-
               <div className="upload-modal-footer">
-                <button 
-                  type="button" 
-                  className="upload-btn upload-btn-secondary"
-                  onClick={() => {
-                    setShowUploadModal(false);
-                    resetUploadForm();
-                  }}
-                >
-                  Annuler
-                </button>
-                <button 
-                  type="submit" 
-                  className="upload-btn upload-btn-primary"
-                  disabled={uploading || selectedFiles.length === 0}
-                >
-                  {uploading ? (
-                    <>
-                      <svg className="upload-spinner" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                        <circle cx="12" cy="12" r="10" />
-                        <path d="M12 2v4M12 18v4M2 12h4M18 12h4" />
-                      </svg>
-                      Upload en cours...
-                    </>
-                  ) : (
-                    <>
-                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="16" height="16">
-                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-                        <polyline points="17,8 12,3 7,8" />
-                        <line x1="12" y1="3" x2="12" y2="15" />
-                      </svg>
-                      Uploader {selectedFiles.length} fichier(s)
-                    </>
-                  )}
+                <button type="button" className="upload-btn upload-btn-secondary" onClick={() => { setShowUploadModal(false); resetUploadForm(); }}>Annuler</button>
+                <button type="submit" className="upload-btn upload-btn-primary" disabled={uploading || selectedFiles.length === 0}>
+                  {uploading ? (<><svg className="upload-spinner" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10" /><path d="M12 2v4M12 18v4M2 12h4M18 12h4" /></svg>Upload en cours...</>) : (<><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="16" height="16"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="17,8 12,3 7,8" /><line x1="12" y1="3" x2="12" y2="15" /></svg>Uploader {selectedFiles.length} fichier(s)</>)}
                 </button>
               </div>
             </form>
@@ -837,42 +689,27 @@ export default function AssetsPanel() {
       
       {/* Modal de confirmation de suppression */}
       {showConfirmModal && assetToDelete && (
-        <div className="modal-overlay" onClick={() => {
-          setShowConfirmModal(false);
-          setAssetToDelete(null);
-        }}>
+        <div className="modal-overlay" onClick={() => { setShowConfirmModal(false); setAssetToDelete(null); }}>
           <div className="modal-container" onClick={(e) => e.stopPropagation()}>
-            <div className="modal-header">
-              <h3>Confirmer la suppression</h3>
-              <button className="modal-close" onClick={() => {
-                setShowConfirmModal(false);
-                setAssetToDelete(null);
-              }}>×</button>
-            </div>
-            <div className="modal-body">
-              <p>
-                Êtes-vous sûr de vouloir supprimer <strong>{assetToDelete.name}</strong> ?
-              </p>
-            </div>
-            <div className="modal-footer">
-              <button 
-                className="modal-btn modal-btn-cancel"
-                onClick={() => {
-                  setShowConfirmModal(false);
-                  setAssetToDelete(null);
-                }}
-              >
-                Annuler
-              </button>
-              <button 
-                className="modal-btn modal-btn-delete"
-                onClick={handleDelete}
-              >
-                Supprimer
-              </button>
-            </div>
+            <div className="modal-header"><h3>Confirmer la suppression</h3><button className="modal-close" onClick={() => { setShowConfirmModal(false); setAssetToDelete(null); }}>×</button></div>
+            <div className="modal-body"><p>Êtes-vous sûr de vouloir supprimer <strong>{assetToDelete.name}</strong> ?</p></div>
+            <div className="modal-footer"><button className="modal-btn modal-btn-cancel" onClick={() => { setShowConfirmModal(false); setAssetToDelete(null); }}>Annuler</button><button className="modal-btn modal-btn-delete" onClick={handleDelete}>Supprimer</button></div>
           </div>
         </div>
+      )}
+      
+      {/* Vue 3D - Model Viewer */}
+      {showModelViewer && selectedModel && (
+        <ModelViewer
+          assetId={selectedModel.id}
+          assetName={selectedModel.name}
+          token={localStorage.getItem('token')}
+          assetExt={selectedModel.ext}
+          onClose={() => {
+            setShowModelViewer(false);
+            setSelectedModel(null);
+          }}
+        />
       )}
     </>
   );

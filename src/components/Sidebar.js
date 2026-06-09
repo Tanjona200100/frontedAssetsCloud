@@ -48,15 +48,16 @@ export default function Sidebar({ activePanel, setActivePanel }) {
   const [userName, setUserName] = useState('Utilisateur');
   const [userRole, setUserRole] = useState('Utilisateur');
   const [badgeRole, setBadgeRole] = useState('USER');
-  const [userAvatar, setUserAvatar] = useState(null);
+  const [profileImageUrl, setProfileImageUrl] = useState(null);
   const [userAccent, setUserAccent] = useState('#3B82F6');
-  const [storageText, setStorageText] = useState('0 / 50 GB');
-  const [storagePercent, setStoragePercent] = useState(0);
+  const [storageText, setStorageText] = useState('18.4 / 50 GB');
+  const [storagePercent, setStoragePercent] = useState(37);
   const [totalUsers, setTotalUsers] = useState(0);
   const [loadingUsers, setLoadingUsers] = useState(false);
-
-  // Référence pour suivre si le composant est monté
+  
+  // Références
   const isMounted = useRef(true);
+  const previousUserDataRef = useRef();
 
   // Mémoriser le rôle actuel
   const currentRole = useMemo(() => {
@@ -70,83 +71,74 @@ export default function Sidebar({ activePanel, setActivePanel }) {
 
   const isAdmin = currentRole === 'admin';
 
-  // Fonctions de formatage mémorisées
+  // Fonctions de formatage
   const formatRoleForBadge = useCallback((roleName) => {
     if (!roleName) return 'USER';
     switch (roleName.toLowerCase()) {
-      case 'admin':
-      case 'administrateur': return 'ADMIN';
-      case 'developpeur':
-      case 'dev':
-      case 'developer':      return 'DEV';
-      case 'graphiste':
-      case 'designer':
-      case 'design':         return 'DESIGN';
-      default:               return roleName.toUpperCase().substring(0, 5);
+      case 'admin': return 'ADMIN';
+      case 'developpeur': return 'DEV';
+      case 'graphiste': return 'DSGN';
+      default: return roleName.toUpperCase().substring(0, 5);
     }
   }, []);
 
   const formatRoleForDisplay = useCallback((roleName) => {
     if (!roleName) return 'Utilisateur';
     switch (roleName.toLowerCase()) {
-      case 'admin':
-      case 'administrateur': return 'Administrateur';
-      case 'developpeur':
-      case 'dev':
-      case 'developer':      return 'Développeur';
-      case 'graphiste':
-      case 'designer':
-      case 'design':         return 'Graphiste';
-      default:               return roleName.charAt(0).toUpperCase() + roleName.slice(1);
+      case 'admin': return 'Administrateur';
+      case 'developpeur': return 'Développeur';
+      case 'graphiste': return 'Graphiste';
+      default: return roleName.charAt(0).toUpperCase() + roleName.slice(1);
     }
   }, []);
 
+  // Navigation items
   const getNavItems = useCallback(() => {
     if (isAdmin) {
       return [
-        { id: "dashboard", label: "Dashboard",      icon: "dashboard" },
-        { id: "users",     label: "Utilisateurs",   icon: "users",    badge: totalUsers.toString(), showBadge: true },
-        { id: "assets",    label: "Assets",          icon: "assets",   badge: "3", badgeRed: true },
-        { id: "stats",     label: "Statistiques",    icon: "stats" },
-        { id: "roles",     label: "Rôles & Accès",   icon: "roles" },
-        { id: "settings",  label: "Paramètres",      icon: "settings" }
+        { id: "dashboard", label: "Dashboard", icon: "dashboard" },
+        { id: "users", label: "Utilisateurs", icon: "users", badge: totalUsers.toString(), showBadge: true },
+        { id: "assets", label: "Assets", icon: "assets", badge: "3", badgeRed: true },
+        { id: "stats", label: "Statistiques", icon: "stats" },
+        { id: "roles", label: "Rôles & Accès", icon: "roles" },
+        { id: "settings", label: "Paramètres", icon: "settings" }
       ];
     }
     return [
-      { id: "dashboard", label: "Dashboard",         icon: "dashboard" },
-      { id: "projects",  label: "Mes projets",        icon: "projects",  badge: "12" },
-      { id: "assets",    label: "Assets techniques",  icon: "assets",    badge: "284" },
-      { id: "history",   label: "Historique",         icon: "history" },
-      { id: "profile",   label: "Profil",             icon: "profile" },
-      { id: "settings",  label: "Paramètres",         icon: "settings" }
+      { id: "dashboard", label: "Dashboard", icon: "dashboard" },
+      { id: "projects", label: "Projets", icon: "projects", badge: "12" },
+      { id: "assets", label: "Assets", icon: "assets", badge: "284" },
+      { id: "history", label: "Historique", icon: "history" },
+      { id: "profile", label: "Profil", icon: "profile" },
+      { id: "settings", label: "Paramètres", icon: "settings" }
     ];
   }, [isAdmin, totalUsers]);
 
   const getIcon = useCallback((iconName) => {
     const adminIcons = {
       dashboard: <MdOutlineDashboard />,
-      users:     <FiUsers />,
-      assets:    <FaRegImages />,
-      stats:     <IoIosStats />,
-      roles:     <GiPoliceBadge />,
-      settings:  <CiSettings />
+      users: <FiUsers />,
+      assets: <FaRegImages />,
+      stats: <IoIosStats />,
+      roles: <GiPoliceBadge />,
+      settings: <CiSettings />
     };
     const userIcons = {
       dashboard: Icons.grid,
-      projects:  Icons.folder,
-      assets:    Icons.file,
-      history:   Icons.clock,
-      profile:   Icons.user,
-      settings:  Icons.cog,
+      projects: Icons.folder,
+      assets: Icons.file,
+      history: Icons.clock,
+      profile: Icons.user,
+      settings: Icons.cog,
     };
     if (isAdmin) {
       return adminIcons[iconName] || null;
-    } else {
-      const iconSvg = userIcons[iconName];
-      return iconSvg ? <span dangerouslySetInnerHTML={{ __html: iconSvg }} /> : null;
     }
+    const iconSvg = userIcons[iconName];
+    return iconSvg ? <span dangerouslySetInnerHTML={{ __html: iconSvg }} /> : null;
   }, [isAdmin]);
 
+  // Récupérer le nombre d'utilisateurs pour admin
   const fetchTotalUsers = useCallback(async () => {
     if (!isAdmin || !isAdminRoute) return;
     try {
@@ -174,7 +166,7 @@ export default function Sidebar({ activePanel, setActivePanel }) {
     }
   }, [isAdmin, isAdminRoute, fetchTotalUsers]);
 
-  // Effet pour les données utilisateur admin
+  // Effet pour les données utilisateur admin (route admin)
   useEffect(() => {
     if (isAdminRoute && user) {
       const firstName = user.first_name || '';
@@ -184,51 +176,98 @@ export default function Sidebar({ activePanel, setActivePanel }) {
       const roleName = user.role || 'admin';
       setUserRole(formatRoleForDisplay(roleName));
       setBadgeRole(formatRoleForBadge(roleName));
-      setUserAccent('#3B82F6');
-      setUserAvatar(user.profile_image_url || null);
+      setUserAccent('#8B5CF6');
+      setProfileImageUrl(user.profile_image_url || null);
     }
   }, [user, isAdminRoute, formatRoleForDisplay, formatRoleForBadge]);
 
-  // ✅ EFFET CORRIGÉ POUR LES DONNÉES NON-ADMIN (ligne 197)
-  // Utilisation d'une référence pour éviter les boucles infinies
-  const previousUserContextRef = useRef();
-
+  // Effet pour les données utilisateur non-admin depuis le contexte
   useEffect(() => {
-    // Vérifier si le contexte a vraiment changé
     if (!isAdminRoute && userContext) {
-      // Comparer avec la valeur précédente pour éviter les mises à jour inutiles
-      const contextChanged = JSON.stringify(previousUserContextRef.current) !== JSON.stringify(userContext);
+      const userData = userContext.userData || {};
       
-      if (contextChanged) {
-        const firstName = userContext.userData?.first_name || userContext.config?.first_name || '';
-        const lastName = userContext.userData?.last_name || userContext.config?.last_name || '';
-        const fullName = `${firstName} ${lastName}`.trim() || userContext.config?.name || 'Utilisateur';
+      const dataChanged = JSON.stringify(previousUserDataRef.current) !== JSON.stringify(userData);
+      
+      if (dataChanged || !previousUserDataRef.current) {
+        const firstName = userData.first_name || '';
+        const lastName = userData.last_name || '';
+        const email = userData.email || '';
+        const imageUrl = userData.profile_image_url || null;
         
+        const fullName = `${firstName} ${lastName}`.trim() || email.split('@')[0] || 'Utilisateur';
         setUserName(fullName);
         
-        const roleFromContext = userContext.role || userContext.config?.role || 'user';
+        const roleFromContext = userContext.role || 'user';
         setUserRole(formatRoleForDisplay(roleFromContext));
         setBadgeRole(formatRoleForBadge(roleFromContext));
-        setUserAccent(userContext.config?.accent || '#3B82F6');
-        setStorageText(userContext.config?.smTxt || '0 / 50 GB');
-        setStoragePercent(userContext.config?.smPct || 0);
         
-        const avatar = userContext.config?.ava || userContext.userData?.profile_image_url;
-        setUserAvatar(avatar);
+        let accent = '#3B82F6';
+        if (roleFromContext === 'graphiste') accent = '#EC4899';
+        setUserAccent(accent);
         
-        // Mettre à jour la référence
-        previousUserContextRef.current = userContext;
+        setStorageText('18.4 / 50 GB');
+        setStoragePercent(37);
+        
+        setProfileImageUrl(imageUrl);
+        
+        previousUserDataRef.current = userData;
       }
     }
   }, [userContext, isAdminRoute, formatRoleForDisplay, formatRoleForBadge]);
 
-  // Nettoyage lors du démontage
+  // 🔥 EFFET SUPPLEMENTAIRE: Charger directement depuis l'API si l'image est absente
+  useEffect(() => {
+    const fetchProfileImage = async () => {
+      if (isAdminRoute) return;
+      
+      const token = localStorage.getItem('token');
+      if (!token) return;
+      
+      // Si on a déjà une image, on ne recharge pas
+      if (profileImageUrl) return;
+      
+      try {
+        const response = await fetch(`${API_BASE_URL}/users/me`, {
+          method: 'GET',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          }
+        });
+        
+        if (response.ok) {
+          const data = await response.json();
+          const userProfile = data.user || data.data || data;
+          
+          if (userProfile.profile_image_url) {
+            console.log('📸 Image chargée depuis API directe:', userProfile.profile_image_url.substring(0, 100));
+            setProfileImageUrl(userProfile.profile_image_url);
+            
+            // Mettre à jour localStorage
+            const storedUser = localStorage.getItem('user');
+            if (storedUser) {
+              const parsedUser = JSON.parse(storedUser);
+              parsedUser.profile_image_url = userProfile.profile_image_url;
+              localStorage.setItem('user', JSON.stringify(parsedUser));
+            }
+          }
+        }
+      } catch (error) {
+        console.error('Erreur chargement image direct:', error);
+      }
+    };
+    
+    fetchProfileImage();
+  }, [isAdminRoute, profileImageUrl]);
+
+  // Nettoyage
   useEffect(() => {
     return () => {
       isMounted.current = false;
     };
   }, []);
 
+  // Gestion de la déconnexion
   const handleLogoutClick = useCallback(() => setShowConfirmModal(true), []);
   const handleCloseModal = useCallback(() => setShowConfirmModal(false), []);
   
@@ -243,43 +282,64 @@ export default function Sidebar({ activePanel, setActivePanel }) {
       sessionStorage.clear();
       navigate(isAdminRoute ? '/admin/login' : '/login', { replace: true });
     } catch (error) {
-      console.error('Erreur lors de la déconnexion:', error);
+      console.error('Erreur:', error);
       navigate(isAdminRoute ? '/admin/login' : '/login', { replace: true });
     } finally {
       setIsLoggingOut(false);
     }
   }, [isAdminRoute, logout, navigate]);
 
+  // Obtenir les initiales
   const getInitials = useCallback(() => {
-    const firstName = userContext?.userData?.first_name || userContext?.config?.first_name;
-    const lastName = userContext?.userData?.last_name || userContext?.config?.last_name;
-    if (firstName && lastName) return `${firstName[0]}${lastName[0]}`.toUpperCase();
-    if (firstName) return firstName[0].toUpperCase();
-    if (userName && userName !== 'Utilisateur' && userName !== 'Administrateur')
+    const firstName = userContext?.userData?.first_name || '';
+    const lastName = userContext?.userData?.last_name || '';
+    
+    if (firstName && lastName) {
+      return `${firstName[0]}${lastName[0]}`.toUpperCase();
+    }
+    if (firstName) {
+      return firstName[0].toUpperCase();
+    }
+    
+    if (userName && userName !== 'Utilisateur' && userName !== 'Administrateur') {
       return userName.charAt(0).toUpperCase();
+    }
+    
     if (isAdminRoute) return 'AD';
     if (currentRole === 'developpeur') return 'DV';
-    if (currentRole === 'graphiste')   return 'DS';
+    if (currentRole === 'graphiste') return 'DS';
+    
     return 'UT';
-  }, [userContext, userName, isAdminRoute, currentRole]);
+  }, [userContext?.userData?.first_name, userContext?.userData?.last_name, userName, isAdminRoute, currentRole]);
 
+  // Classe CSS pour le badge
   const getBadgeClass = useCallback(() => {
     switch (badgeRole) {
-      case 'ADMIN':  return 'sb-badge admin-badge';
-      case 'DEV':    return 'sb-badge dev-badge';
-      case 'DESIGN': return 'sb-badge design-badge';
-      default:       return 'sb-badge';
+      case 'ADMIN': return 'sb-badge admin-badge';
+      case 'DEV': return 'sb-badge dev-badge';
+      case 'DSGN': return 'sb-badge design-badge';
+      default: return 'sb-badge';
     }
   }, [badgeRole]);
 
-  const isUrlAvatar = userAvatar && !userAvatar.startsWith('linear') && !userAvatar.startsWith('radial');
-  const avatarStyle = isUrlAvatar
-    ? { backgroundImage: `url(${userAvatar})`, backgroundSize: 'cover', backgroundPosition: 'center' }
-    : { background: userAvatar || userAccent || '#3B82F6' };
+  // Vérifier si l'image est valide
+  const isValidImage = profileImageUrl && typeof profileImageUrl === 'string' && 
+                      (profileImageUrl.startsWith('http') || 
+                       profileImageUrl.startsWith('https') || 
+                       profileImageUrl.startsWith('data:image'));
+
+  // Style de l'avatar
+  const avatarStyle = isValidImage 
+    ? { 
+        backgroundImage: `url(${profileImageUrl})`, 
+        backgroundSize: 'cover', 
+        backgroundPosition: 'center',
+        backgroundRepeat: 'no-repeat'
+      }
+    : { background: userAccent };
 
   const currentPanel = isAdminRoute ? activePanel : userContext?.panel;
   const handleSetPanel = isAdminRoute ? setActivePanel : userContext?.setPanel;
-
   const navItems = getNavItems();
 
   return (
@@ -311,7 +371,7 @@ export default function Sidebar({ activePanel, setActivePanel }) {
           ))}
         </div>
 
-        {!isAdminRoute && (
+        {!isAdminRoute && currentRole !== 'admin' && (
           <div className="sb-storage" style={{ margin: '16px 20px', padding: '12px 0', borderTop: '1px solid rgba(255,255,255,0.06)', borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
             <div className="st-header">
               <span className="st-label">Stockage</span>
@@ -324,8 +384,12 @@ export default function Sidebar({ activePanel, setActivePanel }) {
         )}
 
         <div className="sb-footer">
-          <div className="admin-avatar" title={userName} style={avatarStyle}>
-            {(!isUrlAvatar && !userAvatar) && getInitials()}
+          <div 
+            className="admin-avatar" 
+            title={userName} 
+            style={avatarStyle}
+          >
+            {!isValidImage && getInitials()}
           </div>
           <div className="admin-info">
             <div className="admin-name">{userName}</div>

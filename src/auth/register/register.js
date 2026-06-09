@@ -20,7 +20,7 @@ const Register = () => {
     password: "",
     confirmPassword: "",
     role: "developpeur",
-    image: null
+    profile_image_url: null
   });
 
   const handleChange = (e) => {
@@ -28,7 +28,47 @@ const Register = () => {
     setFormData((prev) => ({ ...prev, [name]: value }));
   };
 
-  const handleImageChange = (e) => {
+  // Redimensionnement et optimisation de l'image
+  const resizeAndOptimizeImage = (file) => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.readAsDataURL(file);
+      reader.onload = (e) => {
+        const img = new Image();
+        img.src = e.target.result;
+        img.onload = () => {
+          const canvas = document.createElement('canvas');
+          let width = img.width;
+          let height = img.height;
+          
+          const maxSize = 200;
+          if (width > height) {
+            if (width > maxSize) {
+              height = (height * maxSize) / width;
+              width = maxSize;
+            }
+          } else {
+            if (height > maxSize) {
+              width = (width * maxSize) / height;
+              height = maxSize;
+            }
+          }
+          
+          canvas.width = width;
+          canvas.height = height;
+          const ctx = canvas.getContext('2d');
+          ctx.drawImage(img, 0, 0, width, height);
+          
+          const optimizedBase64 = canvas.toDataURL('image/jpeg', 0.7);
+          resolve(optimizedBase64);
+        };
+        img.onerror = reject;
+      };
+      reader.onerror = reject;
+    });
+  };
+
+  const handleImageChange = async (e) => {
     const file = e.target.files[0];
     if (file) {
       if (!file.type.startsWith("image/")) {
@@ -39,12 +79,17 @@ const Register = () => {
         setError("L'image ne doit pas dépasser 5MB.");
         return;
       }
-      setFormData((prev) => ({ ...prev, image: file }));
-      const reader = new FileReader();
-      reader.onloadend = () => setImagePreview(reader.result);
-      reader.readAsDataURL(file);
+      
+      try {
+        const optimizedImage = await resizeAndOptimizeImage(file);
+        setFormData((prev) => ({ ...prev, profile_image_url: optimizedImage }));
+        setImagePreview(optimizedImage);
+      } catch (err) {
+        console.error("Erreur optimisation:", err);
+        setError("Erreur lors du traitement de l'image");
+      }
     } else {
-      setFormData((prev) => ({ ...prev, image: null }));
+      setFormData((prev) => ({ ...prev, profile_image_url: null }));
       setImagePreview(null);
     }
   };
@@ -110,34 +155,44 @@ const Register = () => {
     if (step > 1) setStep(step - 1);
   };
 
-  // ✅ Appelée UNIQUEMENT via onClick du bouton — pas de form onSubmit
   const handleCreateAccount = async () => {
     setError("");
     setSuccess("");
     setLoading(true);
 
-    const userData = {
-      first_name: formData.first_name.trim(),
-      last_name: formData.last_name.trim(),
-      email: formData.email.trim().toLowerCase(),
-      password: formData.password,
-      role: formData.role
-    };
+    try {
+      const userData = {
+        first_name: formData.first_name.trim(),
+        last_name: formData.last_name.trim(),
+        email: formData.email.trim().toLowerCase(),
+        password: formData.password,
+        role: formData.role,
+        profile_image_url: formData.profile_image_url || null
+      };
 
-    console.log("📝 Création manuelle du compte avec le rôle:", userData.role);
+      console.log("📤 Envoi inscription:", {
+        ...userData,
+        profile_image_url: userData.profile_image_url ? "✅ Présent" : "❌ Absent"
+      });
 
-    const result = await register(userData);
+      const result = await register(userData);
 
-    if (result.success) {
+      if (!result.success) {
+        const cleanError = cleanErrorMessage(result.error);
+        setError(cleanError);
+        setLoading(false);
+        return;
+      }
+
       setSuccess("Inscription réussie ! Redirection vers la connexion...");
       setTimeout(() => navigate("/login"), 2000);
-    } else {
-      const cleanError = cleanErrorMessage(result.error);
-      setError(cleanError);
-      console.error("Erreur complète:", result.error);
-    }
 
-    setLoading(false);
+    } catch (error) {
+      console.error("Erreur lors de l'inscription:", error);
+      setError("Une erreur est survenue lors de l'inscription.");
+    } finally {
+      setLoading(false);
+    }
   };
 
   const renderStep1 = () => (
@@ -212,13 +267,13 @@ const Register = () => {
         <label>Photo de profil (optionnel)</label>
         <input
           type="file"
-          name="image"
+          name="profile_image"
           accept="image/jpeg, image/png, image/jpg, image/gif"
           onChange={handleImageChange}
           className="file-input"
         />
         <small style={{ color: "#666", fontSize: "12px" }}>
-          Formats acceptés : JPG, PNG, GIF (max 5MB)
+          Formats acceptés : JPG, PNG, GIF (max 5MB) • L'image sera optimisée automatiquement
         </small>
         {imagePreview && (
           <div className="image-preview">
@@ -237,7 +292,7 @@ const Register = () => {
             <button
               type="button"
               onClick={() => {
-                setFormData((prev) => ({ ...prev, image: null }));
+                setFormData((prev) => ({ ...prev, profile_image_url: null }));
                 setImagePreview(null);
               }}
               style={{
@@ -286,7 +341,6 @@ const Register = () => {
         {error && <div className="error-message">{error}</div>}
         {success && <div className="success-message">{success}</div>}
 
-        {/* ✅ Pas de onSubmit sur le form — zéro risque de submit automatique */}
         <div>
           {step === 1 && renderStep1()}
           {step === 2 && renderStep2()}

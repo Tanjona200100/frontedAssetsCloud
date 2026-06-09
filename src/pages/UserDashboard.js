@@ -14,6 +14,8 @@ import '../components/UserDashboard/userDashboard.css';
 
 export const UserContext = createContext();
 
+const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://192.168.2.160:5000/api';
+
 // Configuration unifiée pour les deux rôles
 const getConfig = (role, userData = {}) => {
   const isDev = role === 'developpeur';
@@ -25,18 +27,20 @@ const getConfig = (role, userData = {}) => {
     ? `${firstName[0]}${lastName[0]}`.toUpperCase()
     : (isDev ? 'DV' : 'GS');
   
+  const profileImageUrl = userData.profile_image_url || null;
+  
   return {
     first_name: firstName,
     last_name: lastName,
     email: userData.email || '',
-    profile_image_url: userData.profile_image_url || null,
+    profile_image_url: profileImageUrl,
     name: displayName,
     init: initials,
     role: role,
     tag: isDev ? 'DEV' : 'GFX',
     accent: isDev ? '#3B82F6' : '#EC4899',
-    ava: userData.profile_image_url 
-      ? `url(${userData.profile_image_url})` 
+    ava: profileImageUrl 
+      ? `url(${profileImageUrl})` 
       : (isDev 
         ? 'linear-gradient(135deg,#1E3A8A,#3B82F6)' 
         : 'linear-gradient(135deg,#831843,#EC4899)'),
@@ -53,7 +57,6 @@ const getConfig = (role, userData = {}) => {
     smTxt: '18.4 / 50 GB',
     smPct: 37,
     activeBefore: isDev ? '#3B82F6' : '#EC4899',
-    // Menu UNIQUE pour les deux rôles
     nav: [
       { id: 'dashboard', label: 'Dashboard', icon: 'grid' },
       { id: 'projects', label: 'Mes projets', icon: 'folder', badge: '12' },
@@ -73,8 +76,8 @@ export default function UserDashboard({ userData = {} }) {
   const [loading, setLoading] = useState(true);
   const [currentUserData, setCurrentUserData] = useState(userData);
   
-  // Référence pour éviter les mises à jour infinies
   const isMounted = useRef(true);
+  const dataFetchedRef = useRef(false);
 
   const openModal = useCallback((modalName) => {
     setModals(prev => ({ ...prev, [modalName]: true }));
@@ -89,30 +92,107 @@ export default function UserDashboard({ userData = {} }) {
     setModals(prev => ({ ...prev, preview: true }));
   }, []);
 
+  // ✅ CORRECTION: Fonction pour récupérer les données utilisateur depuis /users/me
+  const fetchUserProfile = useCallback(async () => {
+    const token = localStorage.getItem('token');
+    
+    if (!token) {
+      console.log('❌ Pas de token trouvé');
+      return null;
+    }
+    
+    try {
+      console.log('🔍 Fetching profile from:', `${API_BASE_URL}/users/me`);
+      
+      const response = await fetch(`${API_BASE_URL}/users/me`, {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      });
+      
+      console.log('📥 Response status:', response.status);
+      
+      if (response.ok) {
+        const data = await response.json();
+        console.log('📥 Données reçues de /users/me:', data);
+        
+        // Extraire l'utilisateur de la réponse
+        const userProfile = data.user || data.data || data;
+        console.log('👤 Profil utilisateur:', {
+          id: userProfile.id,
+          first_name: userProfile.first_name,
+          last_name: userProfile.last_name,
+          profile_image_url: userProfile.profile_image_url ? '✅ Présent' : '❌ Absent'
+        });
+        
+        return userProfile;
+      } else {
+        const errorText = await response.text();
+        console.error('❌ Erreur API:', response.status, errorText);
+        return null;
+      }
+    } catch (error) {
+      console.error('❌ Erreur chargement profil:', error);
+      return null;
+    }
+  }, []);
+
   // Récupérer le rôle et les données utilisateur
   useEffect(() => {
-    const getUserData = () => {
+    const getUserData = async () => {
       let userInfo = { ...userData };
       
+      // Essayer de récupérer depuis localStorage d'abord
       if (!userInfo.first_name && !userInfo.role) {
         const storedUser = localStorage.getItem('user');
         if (storedUser) {
           try {
             const parsedUser = JSON.parse(storedUser);
             userInfo = parsedUser;
+            console.log('📦 Données depuis localStorage:', {
+              role: userInfo.role,
+              profile_image_url: userInfo.profile_image_url ? '✅ Présent' : '❌ Absent'
+            });
           } catch (e) {
             console.error('Erreur lors du parsing user:', e);
           }
         }
       }
       
+      // Si toujours pas de données, essayer depuis l'API
+      if ((!userInfo.first_name || !userInfo.role) && !dataFetchedRef.current) {
+        dataFetchedRef.current = true;
+        console.log('🔄 Chargement depuis API...');
+        const apiProfile = await fetchUserProfile();
+        if (apiProfile) {
+          userInfo = apiProfile;
+          // Mettre à jour localStorage avec les données API
+          localStorage.setItem('user', JSON.stringify(apiProfile));
+          console.log('💾 localStorage mis à jour avec les données API');
+        }
+      }
+      
+      // Vérifier le rôle
       if (userInfo.role === 'developpeur' || userInfo.role === 'graphiste') {
         if (isMounted.current) {
+          console.log('📸 UserDashboard - Données chargées:', {
+            role: userInfo.role,
+            first_name: userInfo.first_name,
+            last_name: userInfo.last_name,
+            profile_image_url: userInfo.profile_image_url ? '✅ Présent' : '❌ Absent',
+            image_value: userInfo.profile_image_url ? userInfo.profile_image_url.substring(0, 100) : 'null'
+          });
           setRole(userInfo.role);
           setCurrentUserData(userInfo);
           setLoading(false);
         }
+      } else if (userInfo.role) {
+        console.error('Rôle invalide:', userInfo.role);
+        window.location.href = '/login';
       } else {
+        console.error('Aucun rôle trouvé, redirection vers login');
         window.location.href = '/login';
       }
     };
@@ -122,13 +202,12 @@ export default function UserDashboard({ userData = {} }) {
     return () => {
       isMounted.current = false;
     };
-  }, [userData]);
+  }, [userData, fetchUserProfile]);
 
-  // Validation du panel selon le rôle - Menu UNIQUE maintenant
+  // Validation du panel
   useEffect(() => {
     if (!role) return;
     
-    // Panels valides pour les deux rôles (identique)
     const validPanels = ['dashboard', 'projects', 'assets', 'history', 'profile', 'settings'];
     
     if (!validPanels.includes(panel)) {
@@ -136,13 +215,20 @@ export default function UserDashboard({ userData = {} }) {
     }
   }, [role, panel]);
 
-  // Mémoriser la config pour éviter les recréations
+  // Mémoriser la config
   const config = useMemo(() => {
     if (!role) return null;
     return getConfig(role, currentUserData);
   }, [role, currentUserData]);
 
-  // Mémoriser la valeur du contexte
+  const contextUserData = useMemo(() => ({
+    first_name: currentUserData.first_name || '',
+    last_name: currentUserData.last_name || '',
+    email: currentUserData.email || '',
+    profile_image_url: currentUserData.profile_image_url || null,
+    ...currentUserData
+  }), [currentUserData]);
+
   const contextValue = useMemo(() => ({
     role,
     setRole,
@@ -152,16 +238,9 @@ export default function UserDashboard({ userData = {} }) {
     openModal,
     closeModal,
     openPreview,
-    userData: {
-      first_name: currentUserData.first_name || '',
-      last_name: currentUserData.last_name || '',
-      email: currentUserData.email || '',
-      profile_image_url: currentUserData.profile_image_url || null,
-      ...currentUserData
-    }
-  }), [role, panel, config, currentUserData, openModal, closeModal, openPreview]);
+    userData: contextUserData
+  }), [role, panel, config, contextUserData, openModal, closeModal, openPreview]);
 
-  // getCurrentPanel simplifié - les deux rôles ont les mêmes panels
   const getCurrentPanel = useCallback(() => {
     if (!role) return <DashboardPanel />;
     
