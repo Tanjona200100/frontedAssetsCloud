@@ -2,117 +2,67 @@
 import React, { useContext, useState, useEffect, useCallback } from 'react';
 import { UserContext } from '../../pages/UserDashboard';
 import ModelViewer from './ModelViewer';
+import { LiaEyeSolid, LiaDownloadSolid, LiaTrashAltSolid, LiaUploadSolid } from 'react-icons/lia';
+import { PiCubeLight } from "react-icons/pi";
+import { FaRegFile } from "react-icons/fa6";
+import { RiDossierFill } from "react-icons/ri";
 
-// Configuration API depuis les variables d'environnement
 const API_BASE_URL = process.env.REACT_APP_API_BASE_URL || process.env.REACT_APP_API_URL || 'http://192.168.2.160:5000/api';
 
-// Fonction pour décoder le token JWT et obtenir le user_id
 const getUserIdFromToken = () => {
   const token = localStorage.getItem('token');
   if (!token) return null;
-  
   try {
     const payload = JSON.parse(atob(token.split('.')[1]));
-    const userId = payload.user_id || payload.sub || payload.id || null;
-    return userId;
+    return payload.user_id || payload.sub || payload.id || null;
   } catch (e) {
     console.error('Error decoding token:', e);
     return null;
   }
 };
 
-// Fonction pour valider un UUID
-const isValidUUID = (uuid) => {
-  const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-  return uuidRegex.test(uuid);
-};
-
 export default function AssetsPanel() {
-  const { role, config, openPreview } = useContext(UserContext);
+  const { role, openPreview } = useContext(UserContext);
   const isGfx = role === 'gfx';
   
-  // États pour la gestion des données
   const [assets, setAssets] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  
-  // États pour la pagination
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [totalAssets, setTotalAssets] = useState(0);
   
-  // États pour les filtres
   const [filters, setFilters] = useState({
-    visibility: 'private',
+    visibility: '',
     file_type: '',
-    search: '',
-    categories: '',
-    tags: ''
+    search: ''
   });
   
-  // État pour l'upload multiple
   const [showUploadModal, setShowUploadModal] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [selectedFiles, setSelectedFiles] = useState([]);
   const [uploadProgress, setUploadProgress] = useState({});
-  
-  // États pour les métadonnées d'upload
   const [uploadTitle, setUploadTitle] = useState('');
   const [uploadDescription, setUploadDescription] = useState('');
   const [uploadVisibility, setUploadVisibility] = useState('private');
   const [uploadCategories, setUploadCategories] = useState('');
   const [uploadTags, setUploadTags] = useState('');
-  
-  // État pour le modal de confirmation
   const [showConfirmModal, setShowConfirmModal] = useState(false);
   const [assetToDelete, setAssetToDelete] = useState(null);
-  
-  // État pour la vue 3D
   const [showModelViewer, setShowModelViewer] = useState(false);
   const [selectedModel, setSelectedModel] = useState(null);
-  
-  // Vérifier l'authentification au chargement
-  useEffect(() => {
-    const userId = getUserIdFromToken();
-    if (!userId) {
-      setError('Utilisateur non authentifié - Veuillez vous reconnecter');
-    } else if (!isValidUUID(userId)) {
-      console.warn('Invalid user_id format:', userId);
-    }
-  }, []);
-  
-  // Mapping extension -> file_type pour l'API
-  const getFileTypeFromExt = (extension) => {
-    const typeMap = {
-      'PNG': 'image', 'JPG': 'image', 'JPEG': 'image', 'GIF': 'image', 'WEBP': 'image',
-      'MP4': 'video', 'MOV': 'video', 'AVI': 'video', 'MKV': 'video',
-      'GLB': '3d_model', 'GLTF': '3d_model', 'FBX': '3d_model', 'OBJ': '3d_model',
-      'ZIP': 'archive', 'RAR': 'archive', '7Z': 'archive',
-      'PSD': 'document', 'AI': 'document', 'JSON': 'document', 'PDF': 'document',
-      'DOC': 'document', 'DOCX': 'document'
-    };
-    return typeMap[extension.toUpperCase()] || 'document';
+  const [hoveredAssetId, setHoveredAssetId] = useState(null);
+
+  const is3DModel = (asset) => {
+    const ext = asset.ext?.toLowerCase().replace(/^\./, '');
+    const fileType = asset.file_type?.toLowerCase();
+    const name = asset.name?.toLowerCase();
+    const supported3DFormats = ['glb', 'gltf', 'fbx', 'obj', 'stl', 'dae', '3ds'];
+    
+    return supported3DFormats.includes(ext) || fileType === '3d_model' || 
+           supported3DFormats.some(format => name?.endsWith(`.${format}`));
   };
   
-  // Vérifier si c'est un modèle 3D
-const is3DModel = (asset) => {
-  const ext = asset.ext?.toLowerCase().replace(/^\./, ''); // Nettoyer le point
-  const fileType = asset.file_type?.toLowerCase();
-  const name = asset.name?.toLowerCase();
-  
-  // Formats 3D supportés
-  const supported3DFormats = ['glb', 'gltf', 'fbx', 'obj', 'stl', 'dae', '3ds'];
-  
-  const is3DExtension = supported3DFormats.includes(ext);
-  const is3DFileType = fileType === '3d_model';
-  const is3DName = supported3DFormats.some(format => name?.endsWith(`.${format}`));
-  
-  console.log(`Asset ${asset.id} - is3D:`, { is3DExtension, is3DFileType, is3DName, ext });
-  
-  return is3DExtension || is3DFileType || is3DName;
-};
-  
-  // Récupération des assets
   const fetchAssets = useCallback(async () => {
     setLoading(true);
     setError(null);
@@ -121,26 +71,18 @@ const is3DModel = (asset) => {
       const params = new URLSearchParams();
       params.append('page', page);
       params.append('limit', 20);
-      params.append('visibility', filters.visibility);
+      if (filters.visibility) params.append('visibility', filters.visibility);
       if (filters.file_type) params.append('file_type', filters.file_type);
       if (filters.search) params.append('search', filters.search);
-      if (filters.categories) params.append('categories', filters.categories);
-      if (filters.tags) params.append('tags', filters.tags);
       
-      const url = `${API_BASE_URL}/assets?${params.toString()}`;
-      
-      const response = await fetch(url, {
-        method: 'GET',
+      const response = await fetch(`${API_BASE_URL}/assets?${params.toString()}`, {
         headers: {
-          'Content-Type': 'application/json',
           'Authorization': `Bearer ${localStorage.getItem('token')}`
         }
       });
       
       if (!response.ok) {
-        if (response.status === 401) {
-          throw new Error('Non autorisé - Veuillez vous reconnecter');
-        }
+        if (response.status === 401) throw new Error('Non autorisé');
         throw new Error(`Erreur HTTP: ${response.status}`);
       }
       
@@ -150,19 +92,13 @@ const is3DModel = (asset) => {
       setAssets(assetsData);
       setTotalPages(data.pagination?.totalPages || data.totalPages || 1);
       setTotalAssets(data.pagination?.total || data.total || assetsData.length);
-      
     } catch (err) {
-      console.error('Erreur lors du chargement des assets:', err);
       setError(err.message);
-      setAssets([]);
-      setTotalPages(1);
-      setTotalAssets(0);
     } finally {
       setLoading(false);
     }
   }, [page, filters]);
   
-  // Upload multiple d'assets
   const handleMultipleUpload = async (event) => {
     event.preventDefault();
     
@@ -199,9 +135,7 @@ const is3DModel = (asset) => {
       if (uploadTitle) formData.append('default_title', uploadTitle);
       if (uploadDescription) formData.append('default_description', uploadDescription);
       
-      const url = `${API_BASE_URL}/assets/upload-multiple`;
-      
-      const response = await fetch(url, {
+      const response = await fetch(`${API_BASE_URL}/assets/upload-multiple`, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${localStorage.getItem('token')}`
@@ -217,7 +151,6 @@ const is3DModel = (asset) => {
       resetUploadForm();
       setShowUploadModal(false);
       await fetchAssets();
-      
     } catch (err) {
       console.error('Erreur upload multiple:', err);
       setError(`Upload échoué: ${err.message}`);
@@ -262,21 +195,15 @@ const is3DModel = (asset) => {
     try {
       const response = await fetch(`${API_BASE_URL}/assets/${assetToDelete.id}`, {
         method: 'DELETE',
-        headers: {
-          'Authorization': `Bearer ${localStorage.getItem('token')}`
-        }
+        headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
       });
       
-      if (!response.ok) {
-        throw new Error(`Erreur suppression: ${response.status}`);
-      }
+      if (!response.ok) throw new Error(`Erreur: ${response.status}`);
       
       setShowConfirmModal(false);
       setAssetToDelete(null);
       await fetchAssets();
-      
     } catch (err) {
-      console.error('Erreur suppression:', err);
       setError(`Suppression échouée: ${err.message}`);
       setShowConfirmModal(false);
     }
@@ -285,14 +212,10 @@ const is3DModel = (asset) => {
   const handleDownload = async (assetId, assetName) => {
     try {
       const response = await fetch(`${API_BASE_URL}/assets/${assetId}/download`, {
-        headers: {
-          'Authorization': `Bearer ${localStorage.getItem('token')}`
-        }
+        headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
       });
       
-      if (!response.ok) {
-        throw new Error(`Erreur téléchargement: ${response.status}`);
-      }
+      if (!response.ok) throw new Error(`Erreur: ${response.status}`);
       
       const blob = await response.blob();
       const url = window.URL.createObjectURL(blob);
@@ -303,66 +226,50 @@ const is3DModel = (asset) => {
       a.click();
       window.URL.revokeObjectURL(url);
       document.body.removeChild(a);
-      
     } catch (err) {
-      console.error('Erreur téléchargement:', err);
       setError(`Téléchargement échoué: ${err.message}`);
     }
   };
   
-const openAssetPreview = (asset) => {
-  if (is3DModel(asset)) {
-    const token = localStorage.getItem('token');
-    if (!token) { setError('Vous devez être connecté'); return; }
+  const openAssetPreview = (asset) => {
+    if (is3DModel(asset)) {
+      const token = localStorage.getItem('token');
+      if (!token) { setError('Connectez-vous'); return; }
 
-    // Try every possible source for the extension
-    let cleanExt = (asset.ext || asset.file_ext || asset.extension || '')
-      .replace(/^\./, '')
-      .toLowerCase();
+      let cleanExt = (asset.ext || asset.file_ext || asset.extension || '')
+        .replace(/^\./, '')
+        .toLowerCase();
 
-    // If still empty, infer from asset.name or asset.title
-    if (!cleanExt) {
-      const nameSource = asset.name || asset.title || '';
-      const dotIdx = nameSource.lastIndexOf('.');
-      if (dotIdx !== -1) cleanExt = nameSource.slice(dotIdx + 1).toLowerCase();
+      if (!cleanExt) {
+        const nameSource = asset.name || asset.title || '';
+        const dotIdx = nameSource.lastIndexOf('.');
+        if (dotIdx !== -1) cleanExt = nameSource.slice(dotIdx + 1).toLowerCase();
+      }
+
+      if (!cleanExt && asset.file_type === '3d_model') cleanExt = 'glb';
+
+      let fileName = asset.title || asset.name || 'model';
+      if (cleanExt && !fileName.toLowerCase().endsWith(`.${cleanExt}`)) {
+        fileName = `${fileName}.${cleanExt}`;
+      }
+
+      setSelectedModel({ id: asset.id, name: fileName, token, ext: cleanExt, asset });
+      setShowModelViewer(true);
+    } else {
+      openPreview(asset.title || asset.name);
     }
-
-    // If still empty but file_type is 3d_model, default to glb
-    if (!cleanExt && asset.file_type === '3d_model') cleanExt = 'glb';
-
-    let fileName = asset.title || asset.name || 'model';
-    if (cleanExt && !fileName.toLowerCase().endsWith(`.${cleanExt}`)) {
-      fileName = `${fileName}.${cleanExt}`;
-    }
-
-    setSelectedModel({ id: asset.id, name: fileName, token, ext: cleanExt });
-    setShowModelViewer(true);
-  } else {
-    openPreview(asset.title || asset.name);
-  }
-};
+  };
   
   const formatSize = (bytes) => {
-    if (!bytes && bytes !== 0) return '0 MB';
-    if (bytes === 0) return '0 MB';
-    
-    const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB'];
+    if (!bytes) return '0 MB';
+    const sizes = ['Bytes', 'KB', 'MB', 'GB'];
     const i = Math.floor(Math.log(bytes) / Math.log(1024));
-    const formattedSize = (bytes / Math.pow(1024, i)).toFixed(2);
-    
-    return `${formattedSize} ${sizes[i]}`;
+    return `${(bytes / Math.pow(1024, i)).toFixed(2)} ${sizes[i]}`;
   };
   
   const formatDate = (dateString) => {
     if (!dateString) return 'Date inconnue';
-    const date = new Date(dateString);
-    return date.toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' });
-  };
-  
-  const handlePageChange = (newPage) => {
-    if (newPage >= 1 && newPage <= totalPages) {
-      setPage(newPage);
-    }
+    return new Date(dateString).toLocaleDateString('fr-FR');
   };
   
   const handleFilterChange = (key, value) => {
@@ -407,25 +314,26 @@ const openAssetPreview = (asset) => {
             </div>
             
             <select 
+              value={filters.visibility}
+              onChange={(e) => handleFilterChange('visibility', e.target.value)}
+              style={{ background: 'rgba(0,0,0,.3)', border: '1px solid rgba(255,255,255,.1)', borderRadius: 6, padding: '4px 8px', color: 'white', fontSize: 12 }}
+            >
+              <option value="">Tous</option>
+              <option value="public">Public</option>
+              <option value="private">Privé</option>
+            </select>
+            
+            <select 
               value={filters.file_type}
               onChange={(e) => handleFilterChange('file_type', e.target.value)}
               style={{ background: 'rgba(0,0,0,.3)', border: '1px solid rgba(255,255,255,.1)', borderRadius: 6, padding: '4px 8px', color: 'white', fontSize: 12 }}
             >
-              <option value="">Tous les types</option>
+              <option value="">Tous types</option>
               <option value="image">Images</option>
               <option value="video">Vidéos</option>
               <option value="3d_model">Modèles 3D</option>
               <option value="archive">Archives</option>
               <option value="document">Documents</option>
-            </select>
-            
-            <select 
-              value={filters.visibility}
-              onChange={(e) => handleFilterChange('visibility', e.target.value)}
-              style={{ background: 'rgba(0,0,0,.3)', border: '1px solid rgba(255,255,255,.1)', borderRadius: 6, padding: '4px 8px', color: 'white', fontSize: 12 }}
-            >
-              <option value="public">Public</option>
-              <option value="private">Privé</option>
             </select>
           </div>
           
@@ -439,8 +347,9 @@ const openAssetPreview = (asset) => {
             <button 
               className="btn btn-primary" 
               onClick={() => setShowUploadModal(true)}
-              style={{ background: 'var(--blue)', border: 'none', padding: '4px 12px', borderRadius: 6, cursor: 'pointer', color: 'white' }}
+              style={{ background: '#3B82F6', border: 'none', padding: '6px 14px', borderRadius: 6, cursor: 'pointer', color: 'white', display: 'flex', alignItems: 'center', gap: 6 }}
             >
+              <LiaUploadSolid size={16} />
               Upload
             </button>
           </div>
@@ -452,122 +361,194 @@ const openAssetPreview = (asset) => {
           </div>
         )}
         
-        {assets.length > 0 ? (
-          <table className="data-table" style={{ width: '100%', borderCollapse: 'collapse' }}>
-            <thead>
-              <tr style={{ borderBottom: '1px solid rgba(255,255,255,.06)' }}>
-                <th style={{ textAlign: 'left', padding: '12px 18px', fontSize: 11, fontWeight: 500, color: 'var(--muted)' }}>Fichier</th>
-                <th style={{ textAlign: 'left', padding: '12px 18px', fontSize: 11, fontWeight: 500, color: 'var(--muted)' }}>Taille</th>
-                <th style={{ textAlign: 'left', padding: '12px 18px', fontSize: 11, fontWeight: 500, color: 'var(--muted)' }}>Date</th>
-                <th style={{ textAlign: 'left', padding: '12px 18px', fontSize: 11, fontWeight: 500, color: 'var(--muted)' }}>Preview</th>
-                <th style={{ textAlign: 'left', padding: '12px 18px', fontSize: 11, fontWeight: 500, color: 'var(--muted)' }}>Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {assets.map((asset) => (
-                <tr key={asset.id} style={{ borderBottom: '1px solid rgba(255,255,255,.04)' }}>
-                  <td style={{ padding: '12px 18px' }}>
-                    <div className="file-cell" style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                      <div className={`file-icon ${asset.icon || asset.ext?.toLowerCase()}`} style={{ 
-                        width: 32, 
-                        height: 32, 
-                        background: is3DModel(asset) ? 'rgba(139,92,246,0.2)' : 'rgba(255,255,255,.05)', 
-                        borderRadius: 6, 
-                        display: 'flex', 
-                        alignItems: 'center', 
-                        justifyContent: 'center', 
-                        fontSize: 10, 
-                        fontWeight: 600, 
-                        color: is3DModel(asset) ? '#A78BFA' : 'var(--muted)'
-                      }}>
-                        {is3DModel(asset) ? '🎨' : asset.ext}
-                      </div>
-                      <div>
-                        <div className="fn" style={{ fontWeight: 500, fontSize: 13, color: 'white' }}>{asset.title || asset.name}</div>
-                        {asset.description && <div className="fm" style={{ fontSize: 10, color: 'var(--muted)' }}>{asset.description}</div>}
-                        {is3DModel(asset) && <div style={{ fontSize: 9, color: '#A78BFA', marginTop: 2 }}>🎨 Modèle 3D</div>}
-                      </div>
+        {/* Grille des assets */}
+        <div style={{ 
+          display: 'grid', 
+          gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', 
+          gap: '16px', 
+          padding: '18px' 
+        }}>
+          {assets.map((asset) => {
+            const is3D = is3DModel(asset);
+            const isHovered = hoveredAssetId === asset.id;
+            
+            return (
+              <div 
+                key={asset.id} 
+                style={{ 
+                  background: 'rgba(0,0,0,.3)', 
+                  borderRadius: 10, 
+                  overflow: 'hidden',
+                  border: `1px solid ${isHovered ? 'rgba(59,130,246,.4)' : 'rgba(255,255,255,.06)'}`,
+                  transition: 'transform 0.2s, border-color 0.2s',
+                  transform: isHovered ? 'translateY(-4px)' : 'none'
+                }}
+                onMouseEnter={() => setHoveredAssetId(asset.id)}
+                onMouseLeave={() => setHoveredAssetId(null)}
+              >
+                {/* Zone de preview cliquable */}
+                <div 
+                  onClick={() => openAssetPreview(asset)}
+                  style={{ 
+                    height: 200, 
+                    background: 'rgba(0,0,0,.4)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    position: 'relative',
+                    cursor: 'pointer'
+                  }}
+                >
+                  {is3D ? (
+                    <div style={{ textAlign: 'center' }}>
+                      <div style={{ fontSize: 64, marginBottom: 8 }}><PiCubeLight /></div>
+                      <div style={{ fontSize: 12, color: '#3b82f6' }}>Modèle 3D</div>
+                      {isHovered && (
+                        <div style={{ 
+                          position: 'absolute', 
+                          bottom: 16, 
+                          left: '50%', 
+                          transform: 'translateX(-50%)',
+                          background: 'rgba(0,0,0,.8)',
+                          padding: '6px 14px',
+                          borderRadius: 20,
+                          fontSize: 12,
+                          color: '#10b981',
+                          whiteSpace: 'nowrap'
+                        }}>
+                          ✨ Cliquer pour visualiser
+                        </div>
+                      )}
                     </div>
-                  </td>
-                  <td style={{ padding: '12px 18px', fontFamily: "'JetBrains Mono', monospace", fontSize: 11, color: 'var(--muted)' }}>
-                    {formatSize(asset.file_size || asset.size || 0)}
-                  </td>
-                  <td style={{ padding: '12px 18px', fontFamily: "'JetBrains Mono', monospace", fontSize: 11, color: 'var(--dim)' }}>
-                    {formatDate(asset.created_at || asset.date)}
-                  </td>
-                  <td style={{ padding: '12px 18px' }}>
+                  ) : (
+                    <div style={{ fontSize: 64, opacity: 0.5 }}><FaRegFile /></div>
+                  )}
+                </div>
+                
+                {/* Informations */}
+                <div style={{ padding: '14px' }}>
+                  <div style={{ fontWeight: 500, fontSize: 14, marginBottom: 4, color: 'white' }}>
+                    {asset.title || asset.name}
+                  </div>
+                  <div style={{ fontSize: 11, color: '#666', marginBottom: 8 }}>
+                    {formatSize(asset.file_size || asset.size)} • {formatDate(asset.created_at)}
+                  </div>
+                  {asset.description && (
+                    <div style={{ 
+                      fontSize: 11, 
+                      color: '#888', 
+                      marginBottom: 10, 
+                      overflow: 'hidden', 
+                      textOverflow: 'ellipsis', 
+                      whiteSpace: 'nowrap' 
+                    }}>
+                      {asset.description}
+                    </div>
+                  )}
+                  {is3D && (
+                    <div style={{ fontSize: 10, color: '#10b981', marginBottom: 10 }}>
+                      <PiCubeLight /> Modèle 3D
+                    </div>
+                  )}
+                  
+                  {/* Actions - tous les boutons uniformes */}
+                  <div style={{ 
+                    display: 'flex', 
+                    gap: 8, 
+                    borderTop: '1px solid rgba(255,255,255,.06)', 
+                    paddingTop: 12, 
+                    marginTop: 4 
+                  }}>
                     <button 
-                      className="action-btn" 
                       onClick={() => openAssetPreview(asset)}
                       style={{ 
-                        background: is3DModel(asset) ? 'rgba(139,92,246,0.2)' : 'transparent', 
-                        border: 'none', 
-                        color: is3DModel(asset) ? '#A78BFA' : 'var(--muted)', 
-                        cursor: 'pointer', 
-                        padding: 4,
-                        borderRadius: 4
+                        flex: 1,
+                        background: 'rgba(59,130,246,.15)',
+                        border: 'none',
+                        padding: '7px',
+                        borderRadius: 6,
+                        color: '#3B82F6',
+                        cursor: 'pointer',
+                        fontSize: 12,
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: 6,
+                        transition: 'background 0.2s'
                       }}
-                      title={is3DModel(asset) ? 'Visualisation 3D' : 'Aperçu'}
+                      onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(59,130,246,.25)'}
+                      onMouseLeave={(e) => e.currentTarget.style.background = 'rgba(59,130,246,.15)'}
                     >
-                      {is3DModel(asset) ? (
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="14" height="14">
-                          <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" />
-                        </svg>
-                      ) : (
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="14" height="14">
-                          <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
-                          <circle cx="12" cy="12" r="3" />
-                        </svg>
-                      )}
+                      <LiaEyeSolid size={14} />
+                      Preview
                     </button>
-                  </td>
-                  <td style={{ padding: '12px 18px' }}>
-                    <div className="action-group" style={{ display: 'flex', gap: 8 }}>
-                      <button 
-                        className="action-btn" 
-                        onClick={() => handleDownload(asset.id, asset.name)}
-                        style={{ background: 'transparent', border: 'none', color: 'var(--muted)', cursor: 'pointer', padding: 4 }}
-                      >
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="14" height="14">
-                          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-                          <polyline points="7,10 12,15 17,10" />
-                          <line x1="12" y1="15" x2="12" y2="3" />
-                        </svg>
-                      </button>
-                      <button 
-                        className="action-btn" 
-                        onClick={() => {
-                          setAssetToDelete({ id: asset.id, name: asset.title || asset.name });
-                          setShowConfirmModal(true);
-                        }}
-                        style={{ background: 'transparent', border: 'none', color: 'var(--muted)', cursor: 'pointer', padding: 4 }}
-                      >
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="14" height="14">
-                          <polyline points="3,6 5,6 21,6" />
-                          <path d="M19 6l-1 14H6L5 6" />
-                        </svg>
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        ) : !loading && (
-          <div style={{ padding: '60px 40px', textAlign: 'center', color: 'var(--dim)' }}>
-            <div style={{ fontSize: 48, marginBottom: 16 }}>📁</div>
+                    <button 
+                      onClick={() => handleDownload(asset.id, asset.name)}
+                      style={{ 
+                        background: 'rgba(255,255,255,.05)',
+                        border: 'none',
+                        padding: '7px 12px',
+                        borderRadius: 6,
+                        color: '#888',
+                        cursor: 'pointer',
+                        fontSize: 12,
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        transition: 'background 0.2s'
+                      }}
+                      onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(255,255,255,.1)'}
+                      onMouseLeave={(e) => e.currentTarget.style.background = 'rgba(255,255,255,.05)'}
+                      title="Télécharger"
+                    >
+                      <LiaDownloadSolid size={14} />
+                    </button>
+                    <button 
+                      onClick={() => {
+                        setAssetToDelete({ id: asset.id, name: asset.title || asset.name });
+                        setShowConfirmModal(true);
+                      }}
+                      style={{ 
+                        background: 'rgba(220,38,38,.1)',
+                        border: 'none',
+                        padding: '7px 12px',
+                        borderRadius: 6,
+                        color: '#ef4444',
+                        cursor: 'pointer',
+                        fontSize: 12,
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        transition: 'background 0.2s'
+                      }}
+                      onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(220,38,38,.2)'}
+                      onMouseLeave={(e) => e.currentTarget.style.background = 'rgba(220,38,38,.1)'}
+                      title="Supprimer"
+                    >
+                      <LiaTrashAltSolid size={14} />
+                    </button>
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+        
+        {assets.length === 0 && !loading && (
+          <div style={{ padding: '60px', textAlign: 'center', color: '#666' }}>
+            <div style={{ fontSize: 48, marginBottom: 16 }}><RiDossierFill /></div>
             <div>Aucun asset trouvé</div>
-            {error && <div style={{ fontSize: 12, marginTop: 8, color: '#ef4444' }}>{error}</div>}
           </div>
         )}
         
-        {totalPages > 1 && assets.length > 0 && (
+        {/* Pagination */}
+        {totalPages > 1 && (
           <div className="pag" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 18px', borderTop: '1px solid var(--b2)' }}>
             <span className="pag-i" style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10, color: 'var(--dim)' }}>
               {totalAssets > 0 ? ((page - 1) * 20) + 1 : 0}–{Math.min(page * 20, totalAssets)} / {totalAssets}
             </span>
             <div className="pag-btns" style={{ display: 'flex', gap: 3 }}>
-              <button className="pb" onClick={() => handlePageChange(page - 1)} disabled={page === 1} style={{ width: 27, height: 27, borderRadius: 5, border: '1px solid rgba(255,255,255,.06)', background: 'transparent', cursor: page === 1 ? 'not-allowed' : 'pointer', opacity: page === 1 ? 0.5 : 1, color: 'white' }}>‹</button>
+              <button className="pb" onClick={() => setPage(p => Math.max(1, p-1))} disabled={page === 1} style={{ width: 27, height: 27, borderRadius: 5, border: '1px solid rgba(255,255,255,.06)', background: 'transparent', cursor: page === 1 ? 'not-allowed' : 'pointer', opacity: page === 1 ? 0.5 : 1, color: 'white' }}>‹</button>
               {[...Array(Math.min(5, totalPages))].map((_, i) => {
                 let pageNum;
                 if (totalPages <= 5) pageNum = i + 1;
@@ -576,16 +557,16 @@ const openAssetPreview = (asset) => {
                 else pageNum = page - 2 + i;
                 if (pageNum > totalPages) return null;
                 return (
-                  <button key={i} className={`pb ${pageNum === page ? 'on' : ''}`} onClick={() => handlePageChange(pageNum)} style={{ width: 27, height: 27, borderRadius: 5, border: '1px solid rgba(255,255,255,.06)', background: pageNum === page ? 'rgba(59,130,246,.15)' : 'transparent', borderColor: pageNum === page ? 'rgba(59,130,246,.4)' : undefined, color: pageNum === page ? 'var(--blue)' : 'white', cursor: 'pointer' }}>{pageNum}</button>
+                  <button key={i} className={`pb ${pageNum === page ? 'on' : ''}`} onClick={() => setPage(pageNum)} style={{ width: 27, height: 27, borderRadius: 5, border: '1px solid rgba(255,255,255,.06)', background: pageNum === page ? 'rgba(59,130,246,.15)' : 'transparent', borderColor: pageNum === page ? 'rgba(59,130,246,.4)' : undefined, color: pageNum === page ? '#3B82F6' : 'white', cursor: 'pointer' }}>{pageNum}</button>
                 );
               })}
-              <button className="pb" onClick={() => handlePageChange(page + 1)} disabled={page === totalPages} style={{ width: 27, height: 27, borderRadius: 5, border: '1px solid rgba(255,255,255,.06)', background: 'transparent', cursor: page === totalPages ? 'not-allowed' : 'pointer', opacity: page === totalPages ? 0.5 : 1, color: 'white' }}>›</button>
+              <button className="pb" onClick={() => setPage(p => Math.min(totalPages, p+1))} disabled={page === totalPages} style={{ width: 27, height: 27, borderRadius: 5, border: '1px solid rgba(255,255,255,.06)', background: 'transparent', cursor: page === totalPages ? 'not-allowed' : 'pointer', opacity: page === totalPages ? 0.5 : 1, color: 'white' }}>›</button>
             </div>
           </div>
         )}
       </div>
       
-      {/* Modal d'upload multiple */}
+      {/* Modal d'upload multiple - Version originale conservée */}
       {showUploadModal && (
         <div className="modal-overlay" onClick={() => { setShowUploadModal(false); resetUploadForm(); }}>
           <div className="upload-modal-container" onClick={(e) => e.stopPropagation()}>
@@ -687,30 +668,42 @@ const openAssetPreview = (asset) => {
         </div>
       )}
       
-      {/* Modal de confirmation de suppression */}
+      {/* Modal de confirmation suppression */}
       {showConfirmModal && assetToDelete && (
         <div className="modal-overlay" onClick={() => { setShowConfirmModal(false); setAssetToDelete(null); }}>
           <div className="modal-container" onClick={(e) => e.stopPropagation()}>
             <div className="modal-header"><h3>Confirmer la suppression</h3><button className="modal-close" onClick={() => { setShowConfirmModal(false); setAssetToDelete(null); }}>×</button></div>
             <div className="modal-body"><p>Êtes-vous sûr de vouloir supprimer <strong>{assetToDelete.name}</strong> ?</p></div>
-            <div className="modal-footer"><button className="modal-btn modal-btn-cancel" onClick={() => { setShowConfirmModal(false); setAssetToDelete(null); }}>Annuler</button><button className="modal-btn modal-btn-delete" onClick={handleDelete}>Supprimer</button></div>
+            <div className="modal-footer">
+              <button className="modal-btn modal-btn-cancel" onClick={() => { setShowConfirmModal(false); setAssetToDelete(null); }}>Annuler</button>
+              <button className="modal-btn modal-btn-delete" onClick={handleDelete}>Supprimer</button>
+            </div>
           </div>
         </div>
       )}
       
-      {/* Vue 3D - Model Viewer */}
+      {/* Vue 3D */}
       {showModelViewer && selectedModel && (
         <ModelViewer
           assetId={selectedModel.id}
           assetName={selectedModel.name}
           token={localStorage.getItem('token')}
           assetExt={selectedModel.ext}
+          assetData={selectedModel.asset}
           onClose={() => {
             setShowModelViewer(false);
             setSelectedModel(null);
+            setHoveredAssetId(null);
           }}
         />
       )}
+      
+      <style>{`
+        @keyframes spin {
+          from { transform: rotate(0deg); }
+          to { transform: rotate(360deg); }
+        }
+      `}</style>
     </>
   );
 }
