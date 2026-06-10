@@ -52,11 +52,45 @@ export default function Sidebar({ activePanel, setActivePanel }) {
   const [userAccent, setUserAccent] = useState('#3B82F6');
   const [storageText, setStorageText] = useState('0 / 50 GB');
   const [storagePercent, setStoragePercent] = useState(0);
-  const [totalUsers, setTotalUsers] = useState(0);
-  const [loadingUsers, setLoadingUsers] = useState(false);
-
+  
+  // État pour les statistiques
+  const [stats, setStats] = useState({
+    totalUsers: 0,
+    totalAssets: 0,
+    pendingUsers: 0,
+    graphistes: 0,
+    developpeurs: 0,
+    loading: true
+  });
+  
   // Référence pour suivre si le composant est monté
   const isMounted = useRef(true);
+
+  // Fonction pour récupérer les statistiques
+  const fetchStats = useCallback(async () => {
+    try {
+      const token = localStorage.getItem('token');
+      if (!token) return;
+      
+      const data = await apiRequest('/admin/stats');
+      
+      if (data.success && data.data && isMounted.current) {
+        setStats({
+          totalUsers: data.data.totals.users.total || 0,
+          totalAssets: data.data.totals.assets.total || 0,
+          pendingUsers: data.data.totals.users.pending || 0,
+          graphistes: data.data.totals.users.graphistes || 0,
+          developpeurs: data.data.totals.users.developpeurs || 0,
+          loading: false
+        });
+      }
+    } catch (error) {
+      console.error("Erreur lors du chargement des stats:", error);
+      if (isMounted.current) {
+        setStats(prev => ({ ...prev, loading: false }));
+      }
+    }
+  }, []);
 
   // Mémoriser le rôle actuel
   const currentRole = useMemo(() => {
@@ -101,26 +135,83 @@ export default function Sidebar({ activePanel, setActivePanel }) {
     }
   }, []);
 
-  const getNavItems = useCallback(() => {
+  // Récupérer les informations de l'utilisateur connecté
+  useEffect(() => {
+    const fetchUserInfo = async () => {
+      try {
+        const token = localStorage.getItem('token');
+        if (!token) return;
+        
+        const data = await apiRequest('/auth/profile');
+        if (data.success && data.user && isMounted.current) {
+          setUserName(`${data.user.first_name || ''} ${data.user.last_name || ''}`.trim() || data.user.email?.split('@')[0] || 'Utilisateur');
+          setUserRole(formatRoleForDisplay(data.user.role));
+          setBadgeRole(formatRoleForBadge(data.user.role));
+          if (data.user.profile_image_url) setUserAvatar(data.user.profile_image_url);
+        }
+      } catch (error) {
+        console.error("Erreur chargement profil:", error);
+      }
+    };
+    
+    fetchUserInfo();
+  }, [formatRoleForDisplay, formatRoleForBadge]);
+
+  // Récupérer les statistiques (admin seulement)
+  useEffect(() => {
+    if (isAdmin) {
+      fetchStats();
+      
+      // Rafraîchir toutes les 30 secondes
+      const interval = setInterval(fetchStats, 30000);
+      
+      return () => clearInterval(interval);
+    }
+  }, [isAdmin, fetchStats]);
+
+  // Nettoyage
+  useEffect(() => {
+    return () => {
+      isMounted.current = false;
+    };
+  }, []);
+
+  // Définition des items de navigation (UNIQUEMENT ICI)
+  const navItems = useMemo(() => {
     if (isAdmin) {
       return [
-        { id: "dashboard", label: "Dashboard",      icon: "dashboard" },
-        { id: "users",     label: "Utilisateurs",   icon: "users",    badge: totalUsers.toString(), showBadge: true },
-        { id: "assets",    label: "Assets",          icon: "assets",   badge: "3", badgeRed: true },
-        { id: "stats",     label: "Statistiques",    icon: "stats" },
-        { id: "roles",     label: "Rôles & Accès",   icon: "roles" },
-        { id: "settings",  label: "Paramètres",      icon: "settings" }
+        { id: "dashboard", label: "Dashboard", icon: "dashboard" },
+        { 
+          id: "users", 
+          label: "Utilisateurs", 
+          icon: "users", 
+          badge: stats.loading ? "..." : (stats.pendingUsers > 0 ? stats.pendingUsers.toString() : ""),
+          showBadge: stats.pendingUsers > 0,
+          badgeRed: true,
+          badgeTitle: `${stats.pendingUsers} utilisateur(s) en attente de validation`
+        },
+        { 
+          id: "assets", 
+          label: "Assets", 
+          icon: "assets", 
+          badge: stats.loading ? "..." : stats.totalAssets.toString(),
+          showBadge: stats.totalAssets > 0,
+          badgeRed: false
+        },
+        { id: "stats", label: "Statistiques", icon: "stats" },
+        { id: "roles", label: "Rôles & Accès", icon: "roles" },
+        { id: "settings", label: "Paramètres", icon: "settings" }
       ];
     }
     return [
-      { id: "dashboard", label: "Dashboard",         icon: "dashboard" },
-      { id: "projects",  label: "Mes projets",        icon: "projects",  badge: "12" },
-      { id: "assets",    label: "Assets techniques",  icon: "assets",    badge: "284" },
-      { id: "history",   label: "Historique",         icon: "history" },
-      { id: "profile",   label: "Profil",             icon: "profile" },
-      { id: "settings",  label: "Paramètres",         icon: "settings" }
+      { id: "dashboard", label: "Dashboard", icon: "dashboard" },
+      { id: "projects",  label: "Mes projets", icon: "projects", badge: "12" },
+      { id: "assets",    label: "Assets techniques", icon: "assets", badge: "284" },
+      { id: "history",   label: "Historique", icon: "history" },
+      { id: "profile",   label: "Profil", icon: "profile" },
+      { id: "settings",  label: "Paramètres", icon: "settings" }
     ];
-  }, [isAdmin, totalUsers]);
+  }, [isAdmin, stats]);
 
   const getIcon = useCallback((iconName) => {
     const adminIcons = {
@@ -147,36 +238,9 @@ export default function Sidebar({ activePanel, setActivePanel }) {
     }
   }, [isAdmin]);
 
-  const fetchTotalUsers = useCallback(async () => {
-    if (!isAdmin || !isAdminRoute) return;
-    try {
-      setLoadingUsers(true);
-      const data = await apiRequest('/admin/users/pending');
-      const users = data.users || [];
-      if (isMounted.current) {
-        setTotalUsers(users.length);
-      }
-    } catch (error) {
-      console.error("Erreur:", error);
-    } finally {
-      if (isMounted.current) {
-        setLoadingUsers(false);
-      }
-    }
-  }, [isAdmin, isAdminRoute]);
-
   // Effet pour les données admin
   useEffect(() => {
-    if (isAdmin && isAdminRoute) {
-      fetchTotalUsers();
-      const interval = setInterval(fetchTotalUsers, 30000);
-      return () => clearInterval(interval);
-    }
-  }, [isAdmin, isAdminRoute, fetchTotalUsers]);
-
-  // Effet pour les données utilisateur admin
-  useEffect(() => {
-    if (isAdminRoute && user) {
+    if (isAdmin && isAdminRoute && user) {
       const firstName = user.first_name || '';
       const lastName = user.last_name || '';
       const fullName = `${firstName} ${lastName}`.trim() || user.email || 'Administrateur';
@@ -187,16 +251,13 @@ export default function Sidebar({ activePanel, setActivePanel }) {
       setUserAccent('#3B82F6');
       setUserAvatar(user.profile_image_url || null);
     }
-  }, [user, isAdminRoute, formatRoleForDisplay, formatRoleForBadge]);
+  }, [user, isAdminRoute, isAdmin, formatRoleForDisplay, formatRoleForBadge]);
 
-  // ✅ EFFET CORRIGÉ POUR LES DONNÉES NON-ADMIN (ligne 197)
-  // Utilisation d'une référence pour éviter les boucles infinies
+  // Effet pour les données non-admin
   const previousUserContextRef = useRef();
 
   useEffect(() => {
-    // Vérifier si le contexte a vraiment changé
     if (!isAdminRoute && userContext) {
-      // Comparer avec la valeur précédente pour éviter les mises à jour inutiles
       const contextChanged = JSON.stringify(previousUserContextRef.current) !== JSON.stringify(userContext);
       
       if (contextChanged) {
@@ -216,18 +277,10 @@ export default function Sidebar({ activePanel, setActivePanel }) {
         const avatar = userContext.config?.ava || userContext.userData?.profile_image_url;
         setUserAvatar(avatar);
         
-        // Mettre à jour la référence
         previousUserContextRef.current = userContext;
       }
     }
   }, [userContext, isAdminRoute, formatRoleForDisplay, formatRoleForBadge]);
-
-  // Nettoyage lors du démontage
-  useEffect(() => {
-    return () => {
-      isMounted.current = false;
-    };
-  }, []);
 
   const handleLogoutClick = useCallback(() => setShowConfirmModal(true), []);
   const handleCloseModal = useCallback(() => setShowConfirmModal(false), []);
@@ -280,8 +333,6 @@ export default function Sidebar({ activePanel, setActivePanel }) {
   const currentPanel = isAdminRoute ? activePanel : userContext?.panel;
   const handleSetPanel = isAdminRoute ? setActivePanel : userContext?.setPanel;
 
-  const navItems = getNavItems();
-
   return (
     <>
       <aside className="admin-sidebar">
@@ -304,7 +355,7 @@ export default function Sidebar({ activePanel, setActivePanel }) {
               {item.label}
               {item.showBadge !== false && item.badge && (
                 <span className={`nav-badge ${item.badgeRed ? "red" : ""}`}>
-                  {loadingUsers && item.id === "users" ? "..." : item.badge}
+                  {item.badge}
                 </span>
               )}
             </div>

@@ -1685,8 +1685,6 @@ tr:hover td { background: rgba(59,130,246,0.04); }
   resize: vertical;
 }
 
-
-/* Ajouter à votre fichier CSS */
 .modal-large {
   max-width: 600px;
   width: 90%;
@@ -1717,6 +1715,131 @@ tr:hover td { background: rgba(59,130,246,0.04); }
 .modal-btn-validate:hover:not(:disabled) {
   background: linear-gradient(135deg, #059669, #047857);
   transform: translateY(-1px);
+}
+
+/* Badges de visibilité */
+.visibility-badge {
+  display: inline-block;
+  padding: 4px 8px;
+  border-radius: 20px;
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.visibility-badge.public {
+  background: rgba(16, 185, 129, 0.15);
+  color: #10B981;
+}
+
+.visibility-badge.team {
+  background: rgba(59, 130, 246, 0.15);
+  color: #60A5FA;
+}
+
+.visibility-badge.private {
+  background: rgba(100, 116, 139, 0.15);
+  color: #9CA3AF;
+}
+
+/* Style pour le type Unity */
+.ftype-dot.unity {
+  background: #8B5CF6;
+}
+
+.bar-wrap {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+}
+
+.bar {
+  width: 100%;
+  max-width: 40px;
+  min-height: 4px;
+  border-radius: 6px;
+  transition: height 0.3s ease;
+  position: relative;
+}
+
+.bar-value {
+  position: absolute;
+  top: -20px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 10px;
+  font-weight: 500;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.bar-label {
+  font-size: 11px;
+  color: var(--text-dim);
+  font-weight: 500;
+}
+
+/* Animation au chargement */
+.bar {
+  animation: barGrow 0.5s ease-out;
+}
+
+/* Styles pour les boutons d'action désactivés */
+.action-btns button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Tooltip pour les titres longs */
+td[title] {
+  cursor: help;
+}
+
+/* Badges de visibilité */
+.visibility-badge {
+  display: inline-block;
+  padding: 4px 8px;
+  border-radius: 20px;
+  font-size: 11px;
+  font-weight: 500;
+  text-transform: capitalize;
+}
+
+.visibility-badge.public {
+  background: rgba(16, 185, 129, 0.15);
+  color: #10B981;
+}
+
+.visibility-badge.team {
+  background: rgba(59, 130, 246, 0.15);
+  color: #60A5FA;
+}
+
+.visibility-badge.private {
+  background: rgba(100, 116, 139, 0.15);
+  color: #9CA3AF;
+}
+
+/* Style pour Unity */
+.ftype-dot.unity {
+  background: #8B5CF6;
+}
+
+.ftype-dot.archive {
+  background: #F59E0B;
+}
+
+@keyframes barGrow {
+  from {
+    height: 0%;
+    opacity: 0;
+  }
+  to {
+    height: var(--target-height);
+    opacity: 1;
+  }
 }
 
 @media (max-width: 640px) {
