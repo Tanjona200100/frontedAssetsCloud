@@ -112,7 +112,7 @@ export default function Sidebar({ activePanel, setActivePanel }) {
       { id: "profile", label: "Profil", icon: "profile" },
       { id: "settings", label: "Paramètres", icon: "settings" }
     ];
-  }, [isAdmin, stats]);
+  }, [isAdmin, totalUsers]);
 
   const getIcon = useCallback((iconName) => {
     const adminIcons = {
