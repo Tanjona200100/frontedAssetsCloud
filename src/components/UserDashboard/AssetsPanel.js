@@ -277,7 +277,7 @@ const is3DModel = (asset) => {
       
     } catch (err) {
       console.error('Erreur suppression:', err);
-      setError(`Suppression échouée: ${err.message}`);
+      setError(`Suppression échouée: vous n'avez pas le droit de supprimer ce fichier`);
       setShowConfirmModal(false);
     }
   };
