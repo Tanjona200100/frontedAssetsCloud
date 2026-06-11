@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 
 
-const API_BASE = 'http://localhost:5000/api';
+const API_BASE = 'http://192.168.2.160:5000/api';
 
 // Récupérer le token
 const getToken = () => localStorage.getItem('token') || sessionStorage.getItem('token');
