@@ -91,11 +91,19 @@ function ModelLoader({ assetId, token, fileName, assetExt, onLoad, onError }) {
             const box = new THREE.Box3().setFromObject(scene);
             const center = box.getCenter(new THREE.Vector3());
             scene.position.sub(center);
-            
-            const size = box.getSize(new THREE.Vector3());
-            const maxDim = Math.max(size.x, size.y, size.z);
-            const scale = maxDim > 3 ? 3/maxDim : (maxDim < 0.5 ? 1.5/maxDim : 1);
-            scene.scale.set(scale, scale, scale);
+
+const size = box.getSize(new THREE.Vector3());
+const maxDim = Math.max(size.x, size.y, size.z);
+
+// Calcul du scale - version simplifiée pour très petit
+let scale;
+if (maxDim > 0) {
+  scale = 1.2 / maxDim;  // Facteur 1.2 = très petit
+  // Limiter pour éviter les extrêmes
+  scale = Math.min(Math.max(scale, 0.3), 2);
+}
+
+scene.scale.set(scale, scale, scale);
             
             if (isMounted) {
               setModel(scene);
@@ -237,12 +245,19 @@ export default function ModelViewer({ assetId, assetName, token, assetExt, asset
             <Canvas 
               shadows 
               style={{ background: '#e5e5e5' }} 
-              onCreated={({ gl }) => {
+              onCreated={({ gl, camera }) => {
                 gl.shadowMap.type = THREE.PCFShadowMap;
-                gl.setClearColor(0xe5e5e5, 1); // Gris clair opaque
+                gl.setClearColor(0xe5e5e5, 1);
+                // Ajuster la position de la caméra pour un meilleur cadrage par défaut
+                camera.position.set(1, 1.5, 4);
+                camera.lookAt(0, 0, 0);
               }}
             >
-              <PerspectiveCamera makeDefault position={[3, 2, 5]} fov={45} />
+              <PerspectiveCamera 
+                makeDefault 
+                position={[2, 1.5, 3]} 
+                fov={45} 
+              />
               
               {/* Lumières adaptées */}
               <ambientLight intensity={0.8} />
