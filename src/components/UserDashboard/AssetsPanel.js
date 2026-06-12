@@ -2,7 +2,7 @@
 import React, { useContext, useState, useEffect, useCallback } from 'react';
 import { UserContext } from '../../pages/UserDashboard';
 import ModelViewer from './ModelViewer';
-import { LiaEyeSolid, LiaDownloadSolid, LiaTrashAltSolid, LiaUploadSolid } from 'react-icons/lia';
+import { LiaEyeSolid, LiaDownloadSolid, LiaTrashAltSolid, LiaUploadSolid, LiaLockSolid, LiaGlobeSolid, LiaImageSolid } from 'react-icons/lia';
 import { PiCubeLight } from "react-icons/pi";
 import { FaRegFile } from "react-icons/fa6";
 import { RiDossierFill } from "react-icons/ri";
@@ -24,20 +24,20 @@ const getUserIdFromToken = () => {
 export default function AssetsPanel() {
   const { role, openPreview } = useContext(UserContext);
   const isGfx = role === 'gfx';
-  
+
   const [assets, setAssets] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [totalAssets, setTotalAssets] = useState(0);
-  
+
   const [filters, setFilters] = useState({
     visibility: '',
     file_type: '',
     search: ''
   });
-  
+
   const [showUploadModal, setShowUploadModal] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [selectedFiles, setSelectedFiles] = useState([]);
@@ -47,6 +47,10 @@ export default function AssetsPanel() {
   const [uploadVisibility, setUploadVisibility] = useState('private');
   const [uploadCategories, setUploadCategories] = useState('');
   const [uploadTags, setUploadTags] = useState('');
+  const [uploadCapture, setUploadCapture] = useState(null);
+  const [uploadCapturePreview, setUploadCapturePreview] = useState(null);
+  const [uploadTriangleCount, setUploadTriangleCount] = useState('');
+  const [perFileDetails, setPerFileDetails] = useState([]);
   const [showConfirmModal, setShowConfirmModal] = useState(false);
   const [assetToDelete, setAssetToDelete] = useState(null);
   const [showModelViewer, setShowModelViewer] = useState(false);
@@ -58,15 +62,15 @@ export default function AssetsPanel() {
     const fileType = asset.file_type?.toLowerCase();
     const name = asset.name?.toLowerCase();
     const supported3DFormats = ['glb', 'gltf', 'fbx', 'obj', 'stl', 'dae', '3ds'];
-    
-    return supported3DFormats.includes(ext) || fileType === '3d_model' || 
-           supported3DFormats.some(format => name?.endsWith(`.${format}`));
+
+    return supported3DFormats.includes(ext) || fileType === '3d_model' ||
+      supported3DFormats.some(format => name?.endsWith(`.${format}`));
   };
-  
+
   const fetchAssets = useCallback(async () => {
     setLoading(true);
     setError(null);
-    
+
     try {
       const params = new URLSearchParams();
       params.append('page', page);
@@ -74,21 +78,21 @@ export default function AssetsPanel() {
       if (filters.visibility) params.append('visibility', filters.visibility);
       if (filters.file_type) params.append('file_type', filters.file_type);
       if (filters.search) params.append('search', filters.search);
-      
+
       const response = await fetch(`${API_BASE_URL}/assets?${params.toString()}`, {
         headers: {
           'Authorization': `Bearer ${localStorage.getItem('token')}`
         }
       });
-      
+
       if (!response.ok) {
         if (response.status === 401) throw new Error('Non autorisé');
         throw new Error(`Erreur HTTP: ${response.status}`);
       }
-      
+
       const data = await response.json();
       const assetsData = data.data || data.assets || [];
-      
+
       setAssets(assetsData);
       setTotalPages(data.pagination?.totalPages || data.totalPages || 1);
       setTotalAssets(data.pagination?.total || data.total || assetsData.length);
@@ -98,43 +102,41 @@ export default function AssetsPanel() {
       setLoading(false);
     }
   }, [page, filters]);
-  
+
   const handleMultipleUpload = async (event) => {
     event.preventDefault();
-    
+
     if (selectedFiles.length === 0) {
       setError('Veuillez sélectionner au moins un fichier');
       return;
     }
-    
+
     if (selectedFiles.length > 10) {
       setError('Maximum 10 fichiers par upload');
       return;
     }
-    
-    const oversizedFiles = selectedFiles.filter(f => f.size > 500 * 1024 * 1024);
-    if (oversizedFiles.length > 0) {
-      setError(`${oversizedFiles.length} fichier(s) dépassent la limite de 500 MB`);
-      return;
-    }
-    
+
     setUploading(true);
     setError(null);
-    setUploadProgress({});
-    
+
     try {
       const formData = new FormData();
-      
+
       selectedFiles.forEach(file => {
-        formData.append('files', file);
+        formData.append('assets', file);
       });
-      
+
+      if (uploadCapture) {
+        formData.append('captures', uploadCapture);
+      }
+
       if (uploadVisibility) formData.append('visibility', uploadVisibility);
       if (uploadCategories) formData.append('categories', uploadCategories);
       if (uploadTags) formData.append('tags', uploadTags);
       if (uploadTitle) formData.append('default_title', uploadTitle);
       if (uploadDescription) formData.append('default_description', uploadDescription);
-      
+      if (uploadTriangleCount) formData.append('triangle_counts', uploadTriangleCount);
+
       const response = await fetch(`${API_BASE_URL}/assets/upload-multiple`, {
         method: 'POST',
         headers: {
@@ -142,12 +144,9 @@ export default function AssetsPanel() {
         },
         body: formData
       });
-      
-      if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(`Upload échoué (${response.status}): ${errorText}`);
-      }
-      
+
+      if (!response.ok) throw new Error(`Upload échoué (${response.status})`);
+
       resetUploadForm();
       setShowUploadModal(false);
       await fetchAssets();
@@ -158,7 +157,7 @@ export default function AssetsPanel() {
       setUploading(false);
     }
   };
-  
+
   const handleFileSelect = (e) => {
     const files = Array.from(e.target.files);
     if (files.length > 10) {
@@ -167,18 +166,18 @@ export default function AssetsPanel() {
     }
     setSelectedFiles(files);
     setError(null);
-    
+
     const progress = {};
     files.forEach((file, index) => {
       progress[index] = 0;
     });
     setUploadProgress(progress);
   };
-  
+
   const removeFile = (index) => {
     setSelectedFiles(prev => prev.filter((_, i) => i !== index));
   };
-  
+
   const resetUploadForm = () => {
     setSelectedFiles([]);
     setUploadTitle('');
@@ -186,20 +185,23 @@ export default function AssetsPanel() {
     setUploadVisibility('private');
     setUploadCategories('');
     setUploadTags('');
+    setUploadCapture(null);
+    setUploadCapturePreview(null);
+    setUploadTriangleCount('');
     setUploadProgress({});
   };
-  
+
   const handleDelete = async () => {
     if (!assetToDelete) return;
-    
+
     try {
       const response = await fetch(`${API_BASE_URL}/assets/${assetToDelete.id}`, {
         method: 'DELETE',
         headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
       });
-      
+
       if (!response.ok) throw new Error(`Erreur: ${response.status}`);
-      
+
       setShowConfirmModal(false);
       setAssetToDelete(null);
       await fetchAssets();
@@ -209,15 +211,15 @@ export default function AssetsPanel() {
       setShowConfirmModal(false);
     }
   };
-  
+
   const handleDownload = async (assetId, assetName) => {
     try {
       const response = await fetch(`${API_BASE_URL}/assets/${assetId}/download`, {
         headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
       });
-      
+
       if (!response.ok) throw new Error(`Erreur: ${response.status}`);
-      
+
       const blob = await response.blob();
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement('a');
@@ -231,7 +233,7 @@ export default function AssetsPanel() {
       setError(`Téléchargement échoué: ${err.message}`);
     }
   };
-  
+
   const openAssetPreview = (asset) => {
     if (is3DModel(asset)) {
       const token = localStorage.getItem('token');
@@ -260,24 +262,40 @@ export default function AssetsPanel() {
       openPreview(asset.title || asset.name);
     }
   };
-  
+
   const formatSize = (bytes) => {
     if (!bytes) return '0 MB';
     const sizes = ['Bytes', 'KB', 'MB', 'GB'];
     const i = Math.floor(Math.log(bytes) / Math.log(1024));
     return `${(bytes / Math.pow(1024, i)).toFixed(2)} ${sizes[i]}`;
   };
-  
+
   const formatDate = (dateString) => {
     if (!dateString) return 'Date inconnue';
     return new Date(dateString).toLocaleDateString('fr-FR');
   };
-  
+
   const handleFilterChange = (key, value) => {
     setFilters(prev => ({ ...prev, [key]: value }));
     setPage(1);
   };
-  
+
+  const handleCaptureSelect = (e) => {
+    const file = e.target.files[0];
+    if (file) {
+      if (!file.type.startsWith('image/')) {
+        setError('La capture doit être une image (JPG, PNG, WebP)');
+        return;
+      }
+      if (file.size > 10 * 1024 * 1024) {
+        setError('La capture ne doit pas dépasser 10 MB');
+        return;
+      }
+      setUploadCapture(file);
+      const previewUrl = URL.createObjectURL(file);
+      setUploadCapturePreview(previewUrl);
+    }
+  };
   const [searchTimeout, setSearchTimeout] = useState(null);
   const handleSearch = (value) => {
     if (searchTimeout) clearTimeout(searchTimeout);
@@ -285,17 +303,17 @@ export default function AssetsPanel() {
       handleFilterChange('search', value);
     }, 500));
   };
-  
+
   useEffect(() => {
     fetchAssets();
   }, [fetchAssets]);
-  
+
   useEffect(() => {
     return () => {
       if (searchTimeout) clearTimeout(searchTimeout);
     };
   }, [searchTimeout]);
-  
+
   if (loading && assets.length === 0) {
     return (
       <div className="tbl-wrap" style={{ background: 'rgba(12,22,40,.8)', border: '1px solid rgba(255,255,255,.06)', borderRadius: 12, overflow: 'hidden', padding: '40px', textAlign: 'center' }}>
@@ -303,7 +321,7 @@ export default function AssetsPanel() {
       </div>
     );
   }
-  
+
   return (
     <>
       <div className="tbl-wrap" style={{ background: 'rgba(12,22,40,.8)', border: '1px solid rgba(255,255,255,.06)', borderRadius: 12, overflow: 'hidden' }}>
@@ -313,8 +331,8 @@ export default function AssetsPanel() {
               <span className="card-title">{isGfx ? 'Assets créatifs' : 'Assets techniques'}</span>
               <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10, color: 'var(--dim)', marginLeft: 10 }}>{totalAssets} fichiers</span>
             </div>
-            
-            <select 
+
+            <select
               value={filters.visibility}
               onChange={(e) => handleFilterChange('visibility', e.target.value)}
               style={{ background: 'rgba(0,0,0,.3)', border: '1px solid rgba(255,255,255,.1)', borderRadius: 6, padding: '4px 8px', color: 'white', fontSize: 12 }}
@@ -323,8 +341,8 @@ export default function AssetsPanel() {
               <option value="public">Public</option>
               <option value="private">Privé</option>
             </select>
-            
-            <select 
+
+            <select
               value={filters.file_type}
               onChange={(e) => handleFilterChange('file_type', e.target.value)}
               style={{ background: 'rgba(0,0,0,.3)', border: '1px solid rgba(255,255,255,.1)', borderRadius: 6, padding: '4px 8px', color: 'white', fontSize: 12 }}
@@ -337,16 +355,16 @@ export default function AssetsPanel() {
               <option value="document">Documents</option>
             </select>
           </div>
-          
+
           <div style={{ display: 'flex', gap: 8 }}>
-            <input 
-              type="text" 
+            <input
+              type="text"
               placeholder="Rechercher..."
               onChange={(e) => handleSearch(e.target.value)}
               style={{ background: 'rgba(0,0,0,.3)', border: '1px solid rgba(255,255,255,.1)', borderRadius: 6, padding: '4px 12px', color: 'white', fontSize: 12, width: 180 }}
             />
-            <button 
-              className="btn btn-primary" 
+            <button
+              className="btn btn-primary"
               onClick={() => setShowUploadModal(true)}
               style={{ background: '#3B82F6', border: 'none', padding: '6px 14px', borderRadius: 6, cursor: 'pointer', color: 'white', display: 'flex', alignItems: 'center', gap: 6 }}
             >
@@ -355,30 +373,31 @@ export default function AssetsPanel() {
             </button>
           </div>
         </div>
-        
+
         {error && (
           <div style={{ padding: '12px 18px', background: 'rgba(220,38,38,.15)', color: '#ef4444', fontSize: 12, borderBottom: '1px solid rgba(220,38,38,.3)' }}>
-            ⚠️ {error}
+            {error}
           </div>
         )}
-        
+
         {/* Grille des assets */}
-        <div style={{ 
-          display: 'grid', 
-          gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', 
-          gap: '16px', 
-          padding: '18px' 
+        <div style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))',
+          gap: '16px',
+          padding: '18px'
         }}>
           {assets.map((asset) => {
             const is3D = is3DModel(asset);
             const isHovered = hoveredAssetId === asset.id;
-            
+            console.log (asset.capture_url);
+
             return (
-              <div 
-                key={asset.id} 
-                style={{ 
-                  background: 'rgba(0,0,0,.3)', 
-                  borderRadius: 10, 
+              <div
+                key={asset.id}
+                style={{
+                  background: 'rgba(0,0,0,.3)',
+                  borderRadius: 10,
                   overflow: 'hidden',
                   border: `1px solid ${isHovered ? 'rgba(59,130,246,.4)' : 'rgba(255,255,255,.06)'}`,
                   transition: 'transform 0.2s, border-color 0.2s',
@@ -388,44 +407,88 @@ export default function AssetsPanel() {
                 onMouseLeave={() => setHoveredAssetId(null)}
               >
                 {/* Zone de preview cliquable */}
-                <div 
+                <div
                   onClick={() => openAssetPreview(asset)}
-                  style={{ 
-                    height: 200, 
+                  style={{
+                    height: 200,
                     background: 'rgba(0,0,0,.4)',
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center',
                     position: 'relative',
-                    cursor: 'pointer'
+                    cursor: 'pointer',
+                    overflow: 'hidden' // Important pour que l'image ne dépasse pas
                   }}
                 >
                   {is3D ? (
-                    <div style={{ textAlign: 'center' }}>
-                      <div style={{ fontSize: 64, marginBottom: 8 }}><PiCubeLight /></div>
-                      <div style={{ fontSize: 12, color: '#3b82f6' }}>Modèle 3D</div>
-                      {isHovered && (
-                        <div style={{ 
-                          position: 'absolute', 
-                          bottom: 16, 
-                          left: '50%', 
-                          transform: 'translateX(-50%)',
-                          background: 'rgba(0,0,0,.8)',
-                          padding: '6px 14px',
-                          borderRadius: 20,
-                          fontSize: 12,
-                          color: '#10b981',
-                          whiteSpace: 'nowrap'
-                        }}>
-                          ✨ Cliquer pour visualiser
+                    // Si une capture existe, on l'affiche
+                    asset.capture_url ? (
+                      <>
+                        <img
+                          src={`${API_BASE_URL.replace('/api', '')}${asset.capture_url}`}
+                          alt={`Aperçu de ${asset.title || asset.name}`}
+                          style={{
+                            width: '100%',
+                            height: '100%',
+                            objectFit: 'cover',
+                            objectPosition: 'center'
+                          }}
+                          onError={(e) => {
+                            // Si l'image ne charge pas, on affiche l'icône par défaut
+                            e.target.style.display = 'none';
+                            e.target.parentElement.querySelector('.default-3d-preview').style.display = 'flex';
+                          }}
+                        />
+                        <div className="default-3d-preview" style={{ display: 'none', textAlign: 'center' }}>
+                          <div style={{ fontSize: 64, marginBottom: 8 }}><PiCubeLight /></div>
+                          <div style={{ fontSize: 12, color: '#3b82f6' }}>Modèle 3D</div>
                         </div>
-                      )}
-                    </div>
+                        {isHovered && (
+                          <div style={{
+                            position: 'absolute',
+                            bottom: 16,
+                            left: '50%',
+                            transform: 'translateX(-50%)',
+                            background: 'rgba(0,0,0,.8)',
+                            padding: '6px 14px',
+                            borderRadius: 20,
+                            fontSize: 12,
+                            color: '#10b981',
+                            whiteSpace: 'nowrap',
+                            zIndex: 2
+                          }}>
+                            ✨ Cliquer pour visualiser
+                          </div>
+                        )}
+                      </>
+                    ) : (
+                      // Pas de capture, on affiche l'icône par défaut
+                      <div style={{ textAlign: 'center' }}>
+                        <div style={{ fontSize: 64, marginBottom: 8 }}><PiCubeLight /></div>
+                        <div style={{ fontSize: 12, color: '#3b82f6' }}>Modèle 3D</div>
+                        {isHovered && (
+                          <div style={{
+                            position: 'absolute',
+                            bottom: 16,
+                            left: '50%',
+                            transform: 'translateX(-50%)',
+                            background: 'rgba(0,0,0,.8)',
+                            padding: '6px 14px',
+                            borderRadius: 20,
+                            fontSize: 12,
+                            color: '#10b981',
+                            whiteSpace: 'nowrap'
+                          }}>
+                            ✨ Cliquer pour visualiser
+                          </div>
+                        )}
+                      </div>
+                    )
                   ) : (
                     <div style={{ fontSize: 64, opacity: 0.5 }}><FaRegFile /></div>
                   )}
                 </div>
-                
+
                 {/* Informations */}
                 <div style={{ padding: '14px' }}>
                   <div style={{ fontWeight: 500, fontSize: 14, marginBottom: 4, color: 'white' }}>
@@ -435,13 +498,13 @@ export default function AssetsPanel() {
                     {formatSize(asset.file_size || asset.size)} • {formatDate(asset.created_at)}
                   </div>
                   {asset.description && (
-                    <div style={{ 
-                      fontSize: 11, 
-                      color: '#888', 
-                      marginBottom: 10, 
-                      overflow: 'hidden', 
-                      textOverflow: 'ellipsis', 
-                      whiteSpace: 'nowrap' 
+                    <div style={{
+                      fontSize: 11,
+                      color: '#888',
+                      marginBottom: 10,
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                      whiteSpace: 'nowrap'
                     }}>
                       {asset.description}
                     </div>
@@ -451,18 +514,18 @@ export default function AssetsPanel() {
                       <PiCubeLight /> Modèle 3D
                     </div>
                   )}
-                  
+
                   {/* Actions - tous les boutons uniformes */}
-                  <div style={{ 
-                    display: 'flex', 
-                    gap: 8, 
-                    borderTop: '1px solid rgba(255,255,255,.06)', 
-                    paddingTop: 12, 
-                    marginTop: 4 
+                  <div style={{
+                    display: 'flex',
+                    gap: 8,
+                    borderTop: '1px solid rgba(255,255,255,.06)',
+                    paddingTop: 12,
+                    marginTop: 4
                   }}>
-                    <button 
+                    <button
                       onClick={() => openAssetPreview(asset)}
-                      style={{ 
+                      style={{
                         flex: 1,
                         background: 'rgba(59,130,246,.15)',
                         border: 'none',
@@ -483,9 +546,9 @@ export default function AssetsPanel() {
                       <LiaEyeSolid size={14} />
                       Preview
                     </button>
-                    <button 
+                    <button
                       onClick={() => handleDownload(asset.id, asset.name)}
-                      style={{ 
+                      style={{
                         background: 'rgba(255,255,255,.05)',
                         border: 'none',
                         padding: '7px 12px',
@@ -504,12 +567,12 @@ export default function AssetsPanel() {
                     >
                       <LiaDownloadSolid size={14} />
                     </button>
-                    <button 
+                    <button
                       onClick={() => {
                         setAssetToDelete({ id: asset.id, name: asset.title || asset.name });
                         setShowConfirmModal(true);
                       }}
-                      style={{ 
+                      style={{
                         background: 'rgba(220,38,38,.1)',
                         border: 'none',
                         padding: '7px 12px',
@@ -534,14 +597,14 @@ export default function AssetsPanel() {
             );
           })}
         </div>
-        
+
         {assets.length === 0 && !loading && (
           <div style={{ padding: '60px', textAlign: 'center', color: '#666' }}>
             <div style={{ fontSize: 48, marginBottom: 16 }}><RiDossierFill /></div>
             <div>Aucun asset trouvé</div>
           </div>
         )}
-        
+
         {/* Pagination */}
         {totalPages > 1 && (
           <div className="pag" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 18px', borderTop: '1px solid var(--b2)' }}>
@@ -549,7 +612,7 @@ export default function AssetsPanel() {
               {totalAssets > 0 ? ((page - 1) * 20) + 1 : 0}–{Math.min(page * 20, totalAssets)} / {totalAssets}
             </span>
             <div className="pag-btns" style={{ display: 'flex', gap: 3 }}>
-              <button className="pb" onClick={() => setPage(p => Math.max(1, p-1))} disabled={page === 1} style={{ width: 27, height: 27, borderRadius: 5, border: '1px solid rgba(255,255,255,.06)', background: 'transparent', cursor: page === 1 ? 'not-allowed' : 'pointer', opacity: page === 1 ? 0.5 : 1, color: 'white' }}>‹</button>
+              <button className="pb" onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1} style={{ width: 27, height: 27, borderRadius: 5, border: '1px solid rgba(255,255,255,.06)', background: 'transparent', cursor: page === 1 ? 'not-allowed' : 'pointer', opacity: page === 1 ? 0.5 : 1, color: 'white' }}>‹</button>
               {[...Array(Math.min(5, totalPages))].map((_, i) => {
                 let pageNum;
                 if (totalPages <= 5) pageNum = i + 1;
@@ -561,12 +624,12 @@ export default function AssetsPanel() {
                   <button key={i} className={`pb ${pageNum === page ? 'on' : ''}`} onClick={() => setPage(pageNum)} style={{ width: 27, height: 27, borderRadius: 5, border: '1px solid rgba(255,255,255,.06)', background: pageNum === page ? 'rgba(59,130,246,.15)' : 'transparent', borderColor: pageNum === page ? 'rgba(59,130,246,.4)' : undefined, color: pageNum === page ? '#3B82F6' : 'white', cursor: 'pointer' }}>{pageNum}</button>
                 );
               })}
-              <button className="pb" onClick={() => setPage(p => Math.min(totalPages, p+1))} disabled={page === totalPages} style={{ width: 27, height: 27, borderRadius: 5, border: '1px solid rgba(255,255,255,.06)', background: 'transparent', cursor: page === totalPages ? 'not-allowed' : 'pointer', opacity: page === totalPages ? 0.5 : 1, color: 'white' }}>›</button>
+              <button className="pb" onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={page === totalPages} style={{ width: 27, height: 27, borderRadius: 5, border: '1px solid rgba(255,255,255,.06)', background: 'transparent', cursor: page === totalPages ? 'not-allowed' : 'pointer', opacity: page === totalPages ? 0.5 : 1, color: 'white' }}>›</button>
             </div>
           </div>
         )}
       </div>
-      
+
       {/* Modal d'upload multiple - Version originale conservée */}
       {showUploadModal && (
         <div className="modal-overlay" onClick={() => { setShowUploadModal(false); resetUploadForm(); }}>
@@ -630,11 +693,25 @@ export default function AssetsPanel() {
                   <div className="upload-metadata-row">
                     <div className="upload-metadata-field">
                       <label className="upload-label"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" width="14" height="14"><path d="M20 12v8H4v-8M12 2v12m0 0-3-3m3 3 3-3" /></svg>Titre par défaut</label>
-                      <input type="text" className="upload-input" value={uploadTitle} onChange={(e) => setUploadTitle(e.target.value)} placeholder="Optionnel - Appliqué à tous les fichiers" />
+                      <input type="text" className="upload-input" value={uploadTitle} onChange={(e) => setUploadTitle(e.target.value)} placeholder="Optionnel" />
                     </div>
                     <div className="upload-metadata-field">
-                      <label className="upload-label"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" width="14" height="14"><path d="M4 4h16v16H4zM9 9h6v6H9z" /></svg>Tags</label>
-                      <input type="text" className="upload-input" value={uploadTags} onChange={(e) => setUploadTags(e.target.value)} placeholder="ex: 3d, design, ui-kit" />
+                      <label className="upload-label">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" width="14" height="14">
+                          <polygon points="12 2 2 7 12 12 22 7 12 2" />
+                          <polyline points="2 17 12 22 22 17" />
+                          <polyline points="2 12 12 17 22 12" />
+                        </svg>
+                        Nombre de triangles
+                      </label>
+                      <input
+                        type="number"
+                        className="upload-input"
+                        value={uploadTriangleCount}
+                        onChange={(e) => setUploadTriangleCount(e.target.value)}
+                        placeholder="ex: 12450"
+                      />
+                      <div className="upload-hint">Nombre de polygones/triangles du modèle 3D</div>
                     </div>
                   </div>
                   <div className="upload-metadata-row">
@@ -645,15 +722,50 @@ export default function AssetsPanel() {
                     <div className="upload-metadata-field">
                       <label className="upload-label"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" width="14" height="14"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" /><circle cx="12" cy="12" r="3" /></svg>Visibilité</label>
                       <div className="upload-visibility-options">
-                        <label className="upload-radio"><input type="radio" value="private" checked={uploadVisibility === 'private'} onChange={(e) => setUploadVisibility(e.target.value)} /><span>🔒 Privé</span></label>
-                        <label className="upload-radio"><input type="radio" value="public" checked={uploadVisibility === 'public'} onChange={(e) => setUploadVisibility(e.target.value)} /><span>🌍 Public</span></label>
+                        <label className="upload-radio"><input type="radio" value="private" checked={uploadVisibility === 'private'} onChange={(e) => setUploadVisibility(e.target.value)} /><span><LiaLockSolid /> Privé</span></label>
+                        <label className="upload-radio"><input type="radio" value="public" checked={uploadVisibility === 'public'} onChange={(e) => setUploadVisibility(e.target.value)} /><span><LiaGlobeSolid /> Public</span></label>
                       </div>
                     </div>
                   </div>
                   <div className="upload-metadata-field">
-                    <label className="upload-label"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" width="14" height="14"><path d="M20 7h-4.18A3 3 0 0 0 16 5.18V4a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2z" /></svg>Catégories (UUIDs)</label>
-                    <input type="text" className="upload-input" value={uploadCategories} onChange={(e) => setUploadCategories(e.target.value)} placeholder="uuid1, uuid2, uuid3" />
-                    <div className="upload-hint">IDs des catégories séparés par des virgules</div>
+                    <label className="upload-label">
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" width="14" height="14">
+                        <rect x="2" y="2" width="20" height="20" rx="2.18" />
+                        <circle cx="8.5" cy="8.5" r="2.5" />
+                        <path d="M21 15l-5-5L5 21" />
+                      </svg>
+                      Capture d'écran (aperçu 3D)
+                    </label>
+                    <div className="upload-capture-area">
+                      <input
+                        type="file"
+                        id="capture-upload"
+                        accept="image/jpeg,image/png,image/webp"
+                        onChange={handleCaptureSelect}
+                        style={{ display: 'none' }}
+                      />
+                      {uploadCapturePreview ? (
+                        <div className="capture-preview">
+                          <img src={uploadCapturePreview} alt="Aperçu" />
+                          <button
+                            type="button"
+                            className="remove-capture"
+                            onClick={() => {
+                              setUploadCapture(null);
+                              setUploadCapturePreview(null);
+                            }}
+                          >
+                            ×
+                          </button>
+                        </div>
+                      ) : (
+                        <label htmlFor="capture-upload" className="capture-upload-label">
+                          <div className="capture-upload-icon"><LiaImageSolid size={32} /></div>
+                          <div>Cliquez pour ajouter une capture d'écran</div>
+                          <div className="capture-upload-hint">JPG, PNG, WebP (max 10 MB)</div>
+                        </label>
+                      )}
+                    </div>
                   </div>
                 </div>
                 {error && <div className="upload-error"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="16" height="16"><circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="16" x2="12.01" y2="16" /></svg>{error}</div>}
@@ -668,7 +780,7 @@ export default function AssetsPanel() {
           </div>
         </div>
       )}
-      
+
       {/* Modal de confirmation suppression */}
       {showConfirmModal && assetToDelete && (
         <div className="modal-overlay" onClick={() => { setShowConfirmModal(false); setAssetToDelete(null); }}>
@@ -682,7 +794,7 @@ export default function AssetsPanel() {
           </div>
         </div>
       )}
-      
+
       {/* Vue 3D */}
       {showModelViewer && selectedModel && (
         <ModelViewer
@@ -698,7 +810,7 @@ export default function AssetsPanel() {
           }}
         />
       )}
-      
+
       <style>{`
         @keyframes spin {
           from { transform: rotate(0deg); }
