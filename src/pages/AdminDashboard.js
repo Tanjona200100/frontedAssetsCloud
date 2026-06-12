@@ -9,6 +9,8 @@ import StatsPanel from "../components/AdminDashboard/StatsPanel";
 import RolesPanel from "../components/AdminDashboard/RolesPanel";
 import SettingsPanel from "../components/AdminDashboard/SettingsPanel";
 import AddUserModal from "../components/AdminDashboard/AddUserModal";
+import ProjectsPanel from "../components/AdminDashboard/ProjectsPanel";
+import CategoriePanel from "../components/AdminDashboard/CategoriePanel";
 import "../components/AdminDashboard/adminDashboard.css";
 
 const AdminDashboard = () => {
@@ -31,6 +33,10 @@ const AdminDashboard = () => {
         return <StatsPanel />;
       case "roles":
         return <RolesPanel />;
+      case "gestion":
+        return <ProjectsPanel />;
+      case "categorie":
+        return <CategoriePanel />;
       case "settings":
         return <SettingsPanel />;
       default:

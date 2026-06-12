@@ -12,6 +12,8 @@ import { IoIosStats } from "react-icons/io";
 import { CiSettings } from "react-icons/ci";
 import { CiLogout } from "react-icons/ci";
 import { Icons } from './UserDashboard/icons';
+import { TbCategory } from "react-icons/tb";
+import { FaFolderOpen } from "react-icons/fa6";
 
 const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://192.168.2.160:5000/api';
 
@@ -101,6 +103,8 @@ export default function Sidebar({ activePanel, setActivePanel }) {
         { id: "assets", label: "Assets", icon: "assets", badge: "3", badgeRed: true },
         { id: "stats", label: "Statistiques", icon: "stats" },
         { id: "roles", label: "Rôles & Accès", icon: "roles" },
+        { id: "gestion", label: "Gestions de projets", icon: "folder" },
+        { id: "categorie", label: "Categorie", icon: "categorie" },
         { id: "settings", label: "Paramètres", icon: "settings" }
       ];
     }
@@ -121,6 +125,8 @@ export default function Sidebar({ activePanel, setActivePanel }) {
       assets: <FaRegImages />,
       stats: <IoIosStats />,
       roles: <GiPoliceBadge />,
+      folder : <FaFolderOpen />,
+      categorie :<TbCategory />,
       settings: <CiSettings />
     };
     const userIcons = {
