@@ -6,7 +6,7 @@ export default function ProjectsPanel() {
   const { openModal } = useContext(UserContext);
   
   const items = [
-    { name: 'API Gateway v3', files: '48 fichiers', status: 'Actif', bg: 'rgba(59,130,246,.15)', color: '#3B82F6', tags: ['REST', 'JSON', 'ZIP'] },
+    { name: 'API Gateway v3', files: '47 fichiers', status: 'Actif', bg: 'rgba(59,130,246,.15)', color: '#3B82F6', tags: ['REST', 'JSON', 'ZIP'] },
     { name: 'Dashboard UI', files: '32 fichiers', status: 'Actif', bg: 'rgba(16,185,129,.15)', color: '#10B981', tags: ['PNG', 'MP4'] },
     { name: 'Mobile App Assets', files: '124 fichiers', status: 'Pausé', bg: 'rgba(139,92,246,.15)', color: '#8B5CF6', tags: ['PNG', 'SVG'] },
     { name: 'Backend Modules', files: '67 fichiers', status: 'Actif', bg: 'rgba(245,158,11,.15)', color: '#F59E0B', tags: ['ZIP', 'JSON'] },
