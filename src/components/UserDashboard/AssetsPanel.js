@@ -56,6 +56,12 @@ export default function AssetsPanel() {
   const [showModelViewer, setShowModelViewer] = useState(false);
   const [selectedModel, setSelectedModel] = useState(null);
   const [hoveredAssetId, setHoveredAssetId] = useState(null);
+  const [projects, setProjects] = useState([]);
+  const [categories, setCategories] = useState([]);
+  const [selectedProject, setSelectedProject] = useState('');
+  const [selectedCategory, setSelectedCategory] = useState('');
+  const [loadingProjects, setLoadingProjects] = useState(false);
+  const [loadingCategories, setLoadingCategories] = useState(false);
 
   const is3DModel = (asset) => {
     const ext = asset.ext?.toLowerCase().replace(/^\./, '');
@@ -103,6 +109,42 @@ export default function AssetsPanel() {
     }
   }, [page, filters]);
 
+  const fetchProjects = useCallback(async () => {
+    setLoadingProjects(true);
+    try {
+      const response = await fetch(`${API_BASE_URL}/projects/simple`, {
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        }
+      });
+      if (!response.ok) throw new Error('Erreur chargement projets');
+      const data = await response.json();
+      setProjects(data.projects || []);
+    } catch (err) {
+      console.error('Erreur fetchProjects:', err);
+    } finally {
+      setLoadingProjects(false);
+    }
+  }, []);
+
+  const fetchCategories = useCallback(async () => {
+    setLoadingCategories(true);
+    try {
+      const response = await fetch(`${API_BASE_URL}/categories`, {
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        }
+      });
+      if (!response.ok) throw new Error('Erreur chargement catégories');
+      const data = await response.json();
+      setCategories(data.categories || []);
+    } catch (err) {
+      console.error('Erreur fetchCategories:', err);
+    } finally {
+      setLoadingCategories(false);
+    }
+  }, []);
+
   const handleMultipleUpload = async (event) => {
     event.preventDefault();
 
@@ -136,7 +178,12 @@ export default function AssetsPanel() {
       if (uploadTitle) formData.append('default_title', uploadTitle);
       if (uploadDescription) formData.append('default_description', uploadDescription);
       if (uploadTriangleCount) formData.append('triangle_counts', uploadTriangleCount);
-
+      if (selectedProject) {
+        formData.append('project_id', selectedProject);
+      }
+      if (selectedCategory) {
+        formData.append('categories', selectedCategory);
+      }
       const response = await fetch(`${API_BASE_URL}/assets/upload-multiple`, {
         method: 'POST',
         headers: {
@@ -188,6 +235,8 @@ export default function AssetsPanel() {
     setUploadCapture(null);
     setUploadCapturePreview(null);
     setUploadTriangleCount('');
+    setSelectedProject('');
+    setSelectedCategory('');
     setUploadProgress({});
   };
 
@@ -306,7 +355,9 @@ export default function AssetsPanel() {
 
   useEffect(() => {
     fetchAssets();
-  }, [fetchAssets]);
+    fetchProjects();
+    fetchCategories();
+  }, [fetchAssets, fetchProjects, fetchCategories]);
 
   useEffect(() => {
     return () => {
@@ -390,7 +441,7 @@ export default function AssetsPanel() {
           {assets.map((asset) => {
             const is3D = is3DModel(asset);
             const isHovered = hoveredAssetId === asset.id;
-            console.log (asset.capture_url);
+            console.log(asset.capture_url);
 
             return (
               <div
@@ -716,14 +767,79 @@ export default function AssetsPanel() {
                   </div>
                   <div className="upload-metadata-row">
                     <div className="upload-metadata-field">
+                      <label className="upload-label">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" width="14" height="14">
+                          <path d="M20 7h-4.18A3 3 0 0 0 16 5.18V4a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2z" />
+                        </svg>
+                        Projet
+                      </label>
+                      <select
+                        className="upload-select"
+                        value={selectedProject}
+                        onChange={(e) => setSelectedProject(e.target.value)}
+                        style={{
+                          width: '100%',
+                          padding: '8px 12px',
+                          background: 'rgba(0,0,0,.3)',
+                          border: '1px solid rgba(255,255,255,.1)',
+                          borderRadius: 6,
+                          color: 'white',
+                          fontSize: 13
+                        }}
+                      >
+                        <option value="">Aucun projet</option>
+                        {projects.map((project) => (
+                          <option key={project.id} value={project.id}>
+                            {project.name}
+                          </option>
+                        ))}
+                      </select>
+                      <div className="upload-hint">Associer l'asset à un projet existant</div>
+                    </div>
+
+                    <div className="upload-metadata-field">
+                      <label className="upload-label">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" width="14" height="14">
+                          <rect x="2" y="2" width="20" height="20" rx="2.18" />
+                          <circle cx="8.5" cy="8.5" r="2.5" />
+                          <path d="M21 15l-5-5L5 21" />
+                        </svg>
+                        Catégorie
+                      </label>
+                      <select
+                        className="upload-select"
+                        value={selectedCategory}
+                        onChange={(e) => setSelectedCategory(e.target.value)}
+                        style={{
+                          width: '100%',
+                          padding: '8px 12px',
+                          background: 'rgba(0,0,0,.3)',
+                          border: '1px solid rgba(255,255,255,.1)',
+                          borderRadius: 6,
+                          color: 'white',
+                          fontSize: 13
+                        }}
+                      >
+                        <option value="">Aucune catégorie</option>
+                        {categories.map((category) => (
+                          <option key={category.id} value={category.id}>
+                            {category.icon || '🏷️'} {category.display_name}
+                          </option>
+                        ))}
+                      </select>
+                      <div className="upload-hint">Associer l'asset à une catégorie</div>
+                    </div>
+                  </div>
+                  <div className="upload-metadata-row">
+                    <div className="upload-metadata-field">
                       <label className="upload-label"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" width="14" height="14"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" /><circle cx="12" cy="7" r="4" /></svg>Description</label>
                       <textarea className="upload-textarea" rows="2" value={uploadDescription} onChange={(e) => setUploadDescription(e.target.value)} placeholder="Optionnelle - Description commune à tous les fichiers" />
                     </div>
                     <div className="upload-metadata-field">
                       <label className="upload-label"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" width="14" height="14"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" /><circle cx="12" cy="12" r="3" /></svg>Visibilité</label>
                       <div className="upload-visibility-options">
-                        <label className="upload-radio"><input type="radio" value="private" checked={uploadVisibility === 'private'} onChange={(e) => setUploadVisibility(e.target.value)} /><span><LiaLockSolid /> Privé</span></label>
                         <label className="upload-radio"><input type="radio" value="public" checked={uploadVisibility === 'public'} onChange={(e) => setUploadVisibility(e.target.value)} /><span><LiaGlobeSolid /> Public</span></label>
+                        <label className="upload-radio"><input type="radio" value="private" checked={uploadVisibility === 'private'} onChange={(e) => setUploadVisibility(e.target.value)} /><span><LiaLockSolid /> Privé</span></label>
                       </div>
                     </div>
                   </div>
