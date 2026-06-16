@@ -1,7 +1,7 @@
 // pages/AdminDashboard.jsx
 import { useState } from "react";
 import Sidebar from "../components/Sidebar";
-import Topbar from "../components/AdminDashboard/Topbar";
+import Topbar from "../components/Topbar";
 import DashboardPanel from "../components/AdminDashboard/DashboardPanel";
 import UsersPanel from "../components/AdminDashboard/UsersPanel";
 import AssetsPanel from "../components/AdminDashboard/AssetsPanel";

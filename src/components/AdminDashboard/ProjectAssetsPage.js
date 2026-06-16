@@ -1,7 +1,7 @@
 // src/components/UserDashboard/ProjectAssetsPage.jsx
 import React, { useState, useEffect } from 'react';
 import { MdArrowBack, MdAdd } from "react-icons/md";
-import { LiaEyeSolid, LiaDownloadSolid, LiaTrashAltSolid, LiaGlobeSolid, LiaLockSolid } from 'react-icons/lia';
+import { LiaEyeSolid, LiaDownloadSolid, LiaTrashAltSolid } from 'react-icons/lia';
 import { PiCubeLight } from "react-icons/pi";
 import { FaRegFile } from "react-icons/fa6";
 import { RiDossierFill } from "react-icons/ri";
@@ -56,6 +56,19 @@ const formatDate = (dateString) => {
   return new Date(dateString).toLocaleDateString('fr-FR');
 };
 
+// Fonction pour récupérer les données utilisateur depuis localStorage
+const getUserData = () => {
+  try {
+    const storedUser = localStorage.getItem('user');
+    if (storedUser) {
+      return JSON.parse(storedUser);
+    }
+  } catch (e) {
+    console.error('Erreur lors du parsing user:', e);
+  }
+  return {};
+};
+
 export default function ProjectAssetsPage({ projectId, onBack }) {
   const [project, setProject] = useState(null);
   const [assets, setAssets] = useState([]);
@@ -68,6 +81,20 @@ export default function ProjectAssetsPage({ projectId, onBack }) {
   const [showConfirmModal, setShowConfirmModal] = useState(false);
   const [assetToDelete, setAssetToDelete] = useState(null);
   const [hoveredAssetId, setHoveredAssetId] = useState(null);
+  
+  // Récupérer les données utilisateur
+  const userData = getUserData();
+  const isAdmin = userData?.role === 'admin' || userData?.is_admin === true;
+  const currentUserId = userData?.id || userData?.user_id;
+  
+  // Vérifier si l'utilisateur peut supprimer l'asset (admin ou propriétaire)
+  const canDeleteAsset = (asset) => {
+    if (isAdmin) return true;
+    if (asset.created_by === currentUserId) return true;
+    if (asset.uploaded_by === currentUserId) return true;
+    if (asset.user_id === currentUserId) return true;
+    return false;
+  };
   
   // Charger les informations du projet
   const fetchProject = async () => {
@@ -268,7 +295,7 @@ export default function ProjectAssetsPage({ projectId, onBack }) {
         </div>
       )}
       
-      {/* Grille des assets - Style identique à AssetsPanel */}
+      {/* Grille des assets */}
       <div className="tbl-wrap" style={{ background: 'rgba(12,22,40,.8)', border: '1px solid rgba(255,255,255,.06)', borderRadius: 12, overflow: 'hidden' }}>
         <div className="tbl-top" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 18px', flexWrap: 'wrap', gap: 12 }}>
           <div>
@@ -303,6 +330,7 @@ export default function ProjectAssetsPage({ projectId, onBack }) {
             {assets.map((asset) => {
               const is3D = is3DModel(asset);
               const isHovered = hoveredAssetId === asset.id;
+              const canDelete = canDeleteAsset(asset);
               
               return (
                 <div
@@ -377,7 +405,20 @@ export default function ProjectAssetsPage({ projectId, onBack }) {
                         </div>
                       )
                     ) : (
-                      <div style={{ fontSize: 64, opacity: 0.5 }}><FaRegFile /></div>
+                      asset.capture_url ? (
+                        <img
+                          src={`${API_BASE_URL.replace('/api', '')}${asset.capture_url}`}
+                          alt={`Aperçu de ${asset.title || asset.name}`}
+                          style={{
+                            width: '100%',
+                            height: '100%',
+                            objectFit: 'cover',
+                            objectPosition: 'center'
+                          }}
+                        />
+                      ) : (
+                        <div style={{ fontSize: 64, opacity: 0.5 }}><FaRegFile /></div>
+                      )
                     )}
                   </div>
                   
@@ -440,48 +481,58 @@ export default function ProjectAssetsPage({ projectId, onBack }) {
                       <button
                         onClick={() => handleDownload(asset.id, asset.name)}
                         style={{
-                          background: 'rgba(255,255,255,.05)',
+                          flex: 1,
+                          background: 'rgba(16,185,129,.15)',
                           border: 'none',
-                          padding: '7px 12px',
+                          padding: '7px',
                           borderRadius: 6,
-                          color: '#888',
+                          color: '#10B981',
                           cursor: 'pointer',
                           fontSize: 12,
                           display: 'flex',
                           alignItems: 'center',
                           justifyContent: 'center',
+                          gap: 6,
                           transition: 'background 0.2s'
                         }}
-                        onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(255,255,255,.1)'}
-                        onMouseLeave={(e) => e.currentTarget.style.background = 'rgba(255,255,255,.05)'}
+                        onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(16,185,129,.25)'}
+                        onMouseLeave={(e) => e.currentTarget.style.background = 'rgba(16,185,129,.15)'}
                         title="Télécharger"
                       >
                         <LiaDownloadSolid size={14} />
+                        Télécharger
                       </button>
-                      <button
-                        onClick={() => {
-                          setAssetToDelete({ id: asset.id, name: asset.title || asset.name });
-                          setShowConfirmModal(true);
-                        }}
-                        style={{
-                          background: 'rgba(220,38,38,.1)',
-                          border: 'none',
-                          padding: '7px 12px',
-                          borderRadius: 6,
-                          color: '#ef4444',
-                          cursor: 'pointer',
-                          fontSize: 12,
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          transition: 'background 0.2s'
-                        }}
-                        onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(220,38,38,.2)'}
-                        onMouseLeave={(e) => e.currentTarget.style.background = 'rgba(220,38,38,.1)'}
-                        title="Retirer du projet"
-                      >
-                        <LiaTrashAltSolid size={14} />
-                      </button>
+                      
+                      {/* Bouton Retirer - uniquement si admin ou propriétaire */}
+                      {canDelete && (
+                        <button
+                          onClick={() => {
+                            setAssetToDelete({ id: asset.id, name: asset.title || asset.name });
+                            setShowConfirmModal(true);
+                          }}
+                          style={{
+                            flex: 1,
+                            background: 'rgba(220,38,38,.1)',
+                            border: 'none',
+                            padding: '7px',
+                            borderRadius: 6,
+                            color: '#ef4444',
+                            cursor: 'pointer',
+                            fontSize: 12,
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            gap: 6,
+                            transition: 'background 0.2s'
+                          }}
+                          onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(220,38,38,.2)'}
+                          onMouseLeave={(e) => e.currentTarget.style.background = 'rgba(220,38,38,.1)'}
+                          title="Retirer du projet"
+                        >
+                          <LiaTrashAltSolid size={14} />
+                          Retirer
+                        </button>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -491,7 +542,7 @@ export default function ProjectAssetsPage({ projectId, onBack }) {
         )}
       </div>
       
-      {/* Modal d'ajout d'asset avec affichage des captures */}
+      {/* Modal d'ajout d'asset */}
       {showAddAssetModal && (
         <div className="modal-overlay" onClick={() => setShowAddAssetModal(false)}>
           <div className="modal-container" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 900, maxHeight: '85vh', overflow: 'auto' }}>
@@ -513,158 +564,44 @@ export default function ProjectAssetsPage({ projectId, onBack }) {
               ) : (
                 <div style={{
                   display: 'grid',
-                  gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))',
+                  gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))',
                   gap: '16px'
                 }}>
-                  {availableAssets.map((asset) => {
-                    const is3D = is3DModel(asset);
-                    return (
-                      <div
-                        key={asset.id}
-                        className="available-asset-card"
-                        style={{
-                          background: 'rgba(0,0,0,.3)',
-                          borderRadius: 10,
-                          overflow: 'hidden',
-                          border: '1px solid rgba(255,255,255,.06)',
-                          cursor: 'pointer',
-                          transition: 'transform 0.2s, border-color 0.2s'
-                        }}
-                        onClick={() => handleAddAsset(asset.id)}
-                        onMouseEnter={(e) => {
-                          e.currentTarget.style.transform = 'translateY(-4px)';
-                          e.currentTarget.style.borderColor = 'rgba(59,130,246,.4)';
-                        }}
-                        onMouseLeave={(e) => {
-                          e.currentTarget.style.transform = 'translateY(0)';
-                          e.currentTarget.style.borderColor = 'rgba(255,255,255,.06)';
-                        }}
-                      >
-                        {/* Zone d'aperçu avec capture si disponible */}
-                        <div style={{
-                          height: 160,
-                          background: 'rgba(0,0,0,.4)',
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          position: 'relative',
-                          overflow: 'hidden'
-                        }}>
-                          {is3D && asset.capture_url ? (
-                            <img
-                              src={`${API_BASE_URL.replace('/api', '')}${asset.capture_url}`}
-                              alt={`Aperçu de ${asset.title || asset.name}`}
-                              style={{
-                                width: '100%',
-                                height: '100%',
-                                objectFit: 'cover',
-                                objectPosition: 'center'
-                              }}
-                              onError={(e) => {
-                                e.target.style.display = 'none';
-                                e.target.parentElement.querySelector('.default-icon').style.display = 'flex';
-                              }}
-                            />
-                          ) : is3D ? (
-                            <div className="default-icon" style={{ textAlign: 'center' }}>
-                              <PiCubeLight size={48} style={{ opacity: 0.6 }} />
-                            </div>
-                          ) : asset.file_type === 'image' && asset.capture_url ? (
-                            <img
-                              src={`${API_BASE_URL.replace('/api', '')}${asset.capture_url}`}
-                              alt={`Aperçu de ${asset.title || asset.name}`}
-                              style={{
-                                width: '100%',
-                                height: '100%',
-                                objectFit: 'cover',
-                                objectPosition: 'center'
-                              }}
-                            />
-                          ) : (
-                            <div className="default-icon" style={{ textAlign: 'center' }}>
-                              <FaRegFile size={48} style={{ opacity: 0.6 }} />
-                            </div>
-                          )}
-                          
-                          {/* Badge de type */}
-                          <div style={{
-                            position: 'absolute',
-                            top: 8,
-                            right: 8,
-                            background: 'rgba(0,0,0,.7)',
-                            padding: '4px 8px',
-                            borderRadius: 6,
-                            fontSize: 10,
-                            color: '#3B82F6'
-                          }}>
-                            {asset.file_type === '3d_model' ? '3D' : 
-                             asset.file_type === 'image' ? 'IMAGE' :
-                             asset.file_type === 'video' ? 'VIDÉO' : 
-                             asset.file_type?.toUpperCase() || 'FICHIER'}
-                          </div>
-                        </div>
-                        
-                        {/* Informations */}
-                        <div style={{ padding: '12px' }}>
-                          <div style={{ fontWeight: 500, fontSize: 13, marginBottom: 4, color: 'white' }}>
-                            {asset.title || asset.name}
-                          </div>
-                          <div style={{ fontSize: 10, color: '#666', marginBottom: 6 }}>
-                            {formatSize(asset.file_size)} • {formatDate(asset.created_at)}
-                          </div>
-                          {asset.description && (
-                            <div style={{
-                              fontSize: 10,
-                              color: '#888',
-                              overflow: 'hidden',
-                              textOverflow: 'ellipsis',
-                              whiteSpace: 'nowrap',
-                              marginBottom: 8
-                            }}>
-                              {asset.description}
-                            </div>
-                          )}
-                          <div style={{
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: 8,
-                            marginTop: 8,
-                            paddingTop: 8,
-                            borderTop: '1px solid rgba(255,255,255,.06)'
-                          }}>
-                            <div style={{
-                              background: 'rgba(59,130,246,.15)',
-                              padding: '4px 8px',
-                              borderRadius: 4,
-                              fontSize: 10,
-                              color: '#3B82F6'
-                            }}>
-                              {asset.visibility === 'public' ? '🌍 Public' : 
-                               asset.visibility === 'team' ? '👥 Team' : '🔒 Privé'}
-                            </div>
-                            <button
-                              style={{
-                                marginLeft: 'auto',
-                                background: '#3B82F6',
-                                border: 'none',
-                                padding: '6px 12px',
-                                borderRadius: 6,
-                                color: 'white',
-                                cursor: 'pointer',
-                                fontSize: 11,
-                                display: 'flex',
-                                alignItems: 'center',
-                                gap: 4
-                              }}
-                            >
-                              <MdAdd size={12} />
-                              Ajouter
-                            </button>
-                          </div>
+                  {availableAssets.map((asset) => (
+                    <div
+                      key={asset.id}
+                      className="available-asset-card"
+                      style={{
+                        background: 'rgba(0,0,0,.3)',
+                        borderRadius: 10,
+                        overflow: 'hidden',
+                        border: '1px solid rgba(255,255,255,.06)',
+                        cursor: 'pointer',
+                        transition: 'transform 0.2s'
+                      }}
+                      onClick={() => handleAddAsset(asset.id)}
+                    >
+                      <div style={{
+                        height: 120,
+                        background: 'rgba(0,0,0,.4)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center'
+                      }}>
+                        {is3DModel(asset) ? (
+                          <PiCubeLight size={48} style={{ opacity: 0.6 }} />
+                        ) : (
+                          <FaRegFile size={48} style={{ opacity: 0.6 }} />
+                        )}
+                      </div>
+                      <div style={{ padding: '12px' }}>
+                        <div style={{ fontWeight: 500, fontSize: 13 }}>{asset.title || asset.name}</div>
+                        <div style={{ fontSize: 10, color: '#666', marginTop: 4 }}>
+                          {formatSize(asset.file_size)} • {asset.file_type || 'Fichier'}
                         </div>
                       </div>
-                    );
-                  })}
+                    </div>
+                  ))}
                 </div>
               )}
             </div>

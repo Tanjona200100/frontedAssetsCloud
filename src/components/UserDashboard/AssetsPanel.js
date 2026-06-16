@@ -21,9 +21,27 @@ const getUserIdFromToken = () => {
   }
 };
 
+// Fonction pour récupérer les données utilisateur depuis localStorage
+const getUserData = () => {
+  try {
+    const storedUser = localStorage.getItem('user');
+    if (storedUser) {
+      return JSON.parse(storedUser);
+    }
+  } catch (e) {
+    console.error('Erreur lors du parsing user:', e);
+  }
+  return {};
+};
+
 export default function AssetsPanel() {
   const { role, openPreview } = useContext(UserContext);
   const isGfx = role === 'gfx';
+
+  // Récupérer les données utilisateur
+  const userData = getUserData();
+  const isAdmin = userData?.role === 'admin' || userData?.is_admin === true;
+  const currentUserId = userData?.id || userData?.user_id || getUserIdFromToken();
 
   const [assets, setAssets] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -56,6 +74,15 @@ export default function AssetsPanel() {
   const [showModelViewer, setShowModelViewer] = useState(false);
   const [selectedModel, setSelectedModel] = useState(null);
   const [hoveredAssetId, setHoveredAssetId] = useState(null);
+
+  // Vérifier si l'utilisateur peut supprimer l'asset (admin ou propriétaire)
+  const canDeleteAsset = (asset) => {
+    if (isAdmin) return true;
+    if (asset.created_by === currentUserId) return true;
+    if (asset.uploaded_by === currentUserId) return true;
+    if (asset.user_id === currentUserId) return true;
+    return false;
+  };
 
   const is3DModel = (asset) => {
     const ext = asset.ext?.toLowerCase().replace(/^\./, '');
@@ -390,7 +417,7 @@ export default function AssetsPanel() {
           {assets.map((asset) => {
             const is3D = is3DModel(asset);
             const isHovered = hoveredAssetId === asset.id;
-            console.log (asset.capture_url);
+            const canDelete = canDeleteAsset(asset);
 
             return (
               <div
@@ -417,11 +444,10 @@ export default function AssetsPanel() {
                     justifyContent: 'center',
                     position: 'relative',
                     cursor: 'pointer',
-                    overflow: 'hidden' // Important pour que l'image ne dépasse pas
+                    overflow: 'hidden'
                   }}
                 >
                   {is3D ? (
-                    // Si une capture existe, on l'affiche
                     asset.capture_url ? (
                       <>
                         <img
@@ -434,7 +460,6 @@ export default function AssetsPanel() {
                             objectPosition: 'center'
                           }}
                           onError={(e) => {
-                            // Si l'image ne charge pas, on affiche l'icône par défaut
                             e.target.style.display = 'none';
                             e.target.parentElement.querySelector('.default-3d-preview').style.display = 'flex';
                           }}
@@ -462,7 +487,6 @@ export default function AssetsPanel() {
                         )}
                       </>
                     ) : (
-                      // Pas de capture, on affiche l'icône par défaut
                       <div style={{ textAlign: 'center' }}>
                         <div style={{ fontSize: 64, marginBottom: 8 }}><PiCubeLight /></div>
                         <div style={{ fontSize: 12, color: '#3b82f6' }}>Modèle 3D</div>
@@ -515,7 +539,7 @@ export default function AssetsPanel() {
                     </div>
                   )}
 
-                  {/* Actions - tous les boutons uniformes */}
+                  {/* Actions */}
                   <div style={{
                     display: 'flex',
                     gap: 8,
@@ -549,48 +573,58 @@ export default function AssetsPanel() {
                     <button
                       onClick={() => handleDownload(asset.id, asset.name)}
                       style={{
-                        background: 'rgba(255,255,255,.05)',
+                        flex: 1,
+                        background: 'rgba(16,185,129,.15)',
                         border: 'none',
-                        padding: '7px 12px',
+                        padding: '7px',
                         borderRadius: 6,
-                        color: '#888',
+                        color: '#10B981',
                         cursor: 'pointer',
                         fontSize: 12,
                         display: 'flex',
                         alignItems: 'center',
                         justifyContent: 'center',
+                        gap: 6,
                         transition: 'background 0.2s'
                       }}
-                      onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(255,255,255,.1)'}
-                      onMouseLeave={(e) => e.currentTarget.style.background = 'rgba(255,255,255,.05)'}
+                      onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(16,185,129,.25)'}
+                      onMouseLeave={(e) => e.currentTarget.style.background = 'rgba(16,185,129,.15)'}
                       title="Télécharger"
                     >
                       <LiaDownloadSolid size={14} />
+                      Télécharger
                     </button>
-                    <button
-                      onClick={() => {
-                        setAssetToDelete({ id: asset.id, name: asset.title || asset.name });
-                        setShowConfirmModal(true);
-                      }}
-                      style={{
-                        background: 'rgba(220,38,38,.1)',
-                        border: 'none',
-                        padding: '7px 12px',
-                        borderRadius: 6,
-                        color: '#ef4444',
-                        cursor: 'pointer',
-                        fontSize: 12,
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        transition: 'background 0.2s'
-                      }}
-                      onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(220,38,38,.2)'}
-                      onMouseLeave={(e) => e.currentTarget.style.background = 'rgba(220,38,38,.1)'}
-                      title="Supprimer"
-                    >
-                      <LiaTrashAltSolid size={14} />
-                    </button>
+                    
+                    {/* Bouton Supprimer - uniquement si admin ou propriétaire */}
+                    {canDelete && (
+                      <button
+                        onClick={() => {
+                          setAssetToDelete({ id: asset.id, name: asset.title || asset.name });
+                          setShowConfirmModal(true);
+                        }}
+                        style={{
+                          flex: 1,
+                          background: 'rgba(220,38,38,.1)',
+                          border: 'none',
+                          padding: '7px',
+                          borderRadius: 6,
+                          color: '#ef4444',
+                          cursor: 'pointer',
+                          fontSize: 12,
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          gap: 6,
+                          transition: 'background 0.2s'
+                        }}
+                        onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(220,38,38,.2)'}
+                        onMouseLeave={(e) => e.currentTarget.style.background = 'rgba(220,38,38,.1)'}
+                        title="Supprimer"
+                      >
+                        <LiaTrashAltSolid size={14} />
+                        Supprimer
+                      </button>
+                    )}
                   </div>
                 </div>
               </div>
@@ -630,7 +664,7 @@ export default function AssetsPanel() {
         )}
       </div>
 
-      {/* Modal d'upload multiple - Version originale conservée */}
+      {/* Modal d'upload multiple */}
       {showUploadModal && (
         <div className="modal-overlay" onClick={() => { setShowUploadModal(false); resetUploadForm(); }}>
           <div className="upload-modal-container" onClick={(e) => e.stopPropagation()}>

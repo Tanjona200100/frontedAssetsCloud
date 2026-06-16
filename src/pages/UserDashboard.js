@@ -1,8 +1,10 @@
 // src/pages/UserDashboard.jsx
 import React, { useState, useEffect, createContext, useMemo, useCallback, useRef } from 'react';
 import Sidebar from '../components/Sidebar';
+import Topbar from '../components/Topbar';
 import DashboardPanel from '../components/UserDashboard/DashboardPanel';
 import ProjectsPanel from '../components/UserDashboard/ProjectsPanel';
+import ProjectAssetsPage from '../components/AdminDashboard/ProjectAssetsPage'; // ← AJOUT
 import AssetsPanel from '../components/UserDashboard/AssetsPanel';
 import HistoryPanel from '../components/UserDashboard/HistoryPanel';
 import ProfilePanel from '../components/UserDashboard/ProfilePanel';
@@ -71,10 +73,12 @@ const getConfig = (role, userData = {}) => {
 export default function UserDashboard({ userData = {} }) {
   const [role, setRole] = useState(null);
   const [panel, setPanel] = useState('dashboard');
+  const [selectedProjectId, setSelectedProjectId] = useState(null); // ← AJOUT
   const [modals, setModals] = useState({ folder: false, collection: false, preview: false });
   const [previewData, setPreviewData] = useState({ name: '', type: '' });
   const [loading, setLoading] = useState(true);
   const [currentUserData, setCurrentUserData] = useState(userData);
+  const [searchQuery, setSearchQuery] = useState("");
   
   const isMounted = useRef(true);
   const dataFetchedRef = useRef(false);
@@ -92,7 +96,21 @@ export default function UserDashboard({ userData = {} }) {
     setModals(prev => ({ ...prev, preview: true }));
   }, []);
 
-  // ✅ CORRECTION: Fonction pour récupérer les données utilisateur depuis /users/me
+  // ← AJOUT: Fonction pour ouvrir les assets d'un projet
+  const openProjectAssets = useCallback((projectId) => {
+    console.log('🔵 openProjectAssets appelé avec ID:', projectId);
+    setSelectedProjectId(projectId);
+    setPanel('project-assets');
+  }, []);
+
+  // ← AJOUT: Fonction pour revenir à la liste des projets
+  const backToProjects = useCallback(() => {
+    console.log('🔵 backToProjects appelé');
+    setSelectedProjectId(null);
+    setPanel('projects');
+  }, []);
+
+  // Fonction pour récupérer les données utilisateur depuis /users/me
   const fetchUserProfile = useCallback(async () => {
     const token = localStorage.getItem('token');
     
@@ -118,7 +136,6 @@ export default function UserDashboard({ userData = {} }) {
         const data = await response.json();
         console.log('📥 Données reçues de /users/me:', data);
         
-        // Extraire l'utilisateur de la réponse
         const userProfile = data.user || data.data || data;
         console.log('👤 Profil utilisateur:', {
           id: userProfile.id,
@@ -144,7 +161,6 @@ export default function UserDashboard({ userData = {} }) {
     const getUserData = async () => {
       let userInfo = { ...userData };
       
-      // Essayer de récupérer depuis localStorage d'abord
       if (!userInfo.first_name && !userInfo.role) {
         const storedUser = localStorage.getItem('user');
         if (storedUser) {
@@ -161,28 +177,24 @@ export default function UserDashboard({ userData = {} }) {
         }
       }
       
-      // Si toujours pas de données, essayer depuis l'API
       if ((!userInfo.first_name || !userInfo.role) && !dataFetchedRef.current) {
         dataFetchedRef.current = true;
         console.log('🔄 Chargement depuis API...');
         const apiProfile = await fetchUserProfile();
         if (apiProfile) {
           userInfo = apiProfile;
-          // Mettre à jour localStorage avec les données API
           localStorage.setItem('user', JSON.stringify(apiProfile));
           console.log('💾 localStorage mis à jour avec les données API');
         }
       }
       
-      // Vérifier le rôle
       if (userInfo.role === 'developpeur' || userInfo.role === 'graphiste') {
         if (isMounted.current) {
           console.log('📸 UserDashboard - Données chargées:', {
             role: userInfo.role,
             first_name: userInfo.first_name,
             last_name: userInfo.last_name,
-            profile_image_url: userInfo.profile_image_url ? '✅ Présent' : '❌ Absent',
-            image_value: userInfo.profile_image_url ? userInfo.profile_image_url.substring(0, 100) : 'null'
+            profile_image_url: userInfo.profile_image_url ? '✅ Présent' : '❌ Absent'
           });
           setRole(userInfo.role);
           setCurrentUserData(userInfo);
@@ -204,13 +216,15 @@ export default function UserDashboard({ userData = {} }) {
     };
   }, [userData, fetchUserProfile]);
 
-  // Validation du panel
+  // Validation du panel - AJOUT 'project-assets'
   useEffect(() => {
     if (!role) return;
     
-    const validPanels = ['dashboard', 'projects', 'assets', 'history', 'profile', 'settings'];
+    const validPanels = ['dashboard', 'projects', 'project-assets', 'assets', 'history', 'profile', 'settings'];
+    console.log('🟢 Panel actuel:', panel, 'Panel valides:', validPanels);
     
     if (!validPanels.includes(panel)) {
+      console.log('🟡 Panel invalide, reset à dashboard');
       setPanel('dashboard');
     }
   }, [role, panel]);
@@ -238,10 +252,14 @@ export default function UserDashboard({ userData = {} }) {
     openModal,
     closeModal,
     openPreview,
+    openProjectAssets, // ← AJOUT
+    backToProjects, // ← AJOUT
     userData: contextUserData
-  }), [role, panel, config, contextUserData, openModal, closeModal, openPreview]);
+  }), [role, panel, config, contextUserData, openModal, closeModal, openPreview, openProjectAssets, backToProjects]);
 
   const getCurrentPanel = useCallback(() => {
+    console.log('🟢 getCurrentPanel - Panel:', panel, 'SelectedProjectId:', selectedProjectId);
+    
     if (!role) return <DashboardPanel />;
     
     switch (panel) {
@@ -249,8 +267,15 @@ export default function UserDashboard({ userData = {} }) {
         return <DashboardPanel />;
       case 'projects':
         return <ProjectsPanel />;
+      case 'project-assets': // ← AJOUT
+        console.log('🟢 Affichage de ProjectAssetsPage avec ID:', selectedProjectId);
+        if (!selectedProjectId) {
+          console.log('🟡 Pas de selectedProjectId, retour aux projets');
+          return <ProjectsPanel />;
+        }
+        return <ProjectAssetsPage projectId={selectedProjectId} onBack={backToProjects} />;
       case 'assets':
-        return <AssetsPanel />;
+        return <AssetsPanel searchQuery={searchQuery} />;
       case 'history':
         return <HistoryPanel />;
       case 'profile':
@@ -260,7 +285,7 @@ export default function UserDashboard({ userData = {} }) {
       default:
         return <DashboardPanel />;
     }
-  }, [role, panel]);
+  }, [role, panel, searchQuery, selectedProjectId, backToProjects]);
 
   if (loading) {
     return (
@@ -286,6 +311,11 @@ export default function UserDashboard({ userData = {} }) {
       <div className="dashboard-shell">
         <Sidebar activePanel={panel} setActivePanel={setPanel} />
         <div className="dashboard-main">
+          <Topbar 
+            activePanel={panel} 
+            searchQuery={searchQuery}
+            setSearchQuery={setSearchQuery}
+          />
           <div className="dashboard-content">
             {getCurrentPanel()}
           </div>
