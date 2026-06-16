@@ -91,47 +91,7 @@ const SettingsPanel = () => {
         <Toggle label="Logs d'audit" sublabel="Enregistrer toutes les actions" defaultOn={true} />
       </div>
 
-      <div className="settings-card">
-        <div className="settings-title">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-            <rect x="3" y="3" width="18" height="18" rx="2" />
-            <circle cx="8.5" cy="8.5" r="1.5" />
-            <polyline points="21,15 16,10 5,21" />
-          </svg>
-          Catégories d'assets
-        </div>
-        <div style={{ display: "flex", flexWrap: "wrap", gap: "7px", marginBottom: "14px" }}>
-          {categories.map(cat => (
-            <span key={cat} style={{
-              fontSize: "12px",
-              padding: "4px 10px",
-              borderRadius: "20px",
-              border: `1px solid ${categoryColors[cat].border}`,
-              color: categoryColors[cat].color,
-              background: categoryColors[cat].bg
-            }}>
-              {cat}
-            </span>
-          ))}
-          <span style={{
-            fontSize: "12px",
-            padding: "4px 10px",
-            borderRadius: "20px",
-            border: "1px dashed var(--border)",
-            color: "var(--text-dim)",
-            cursor: "pointer"
-          }}>
-            + Ajouter
-          </span>
-        </div>
-        <div className="field-row">
-          <label className="field-label">Nouvelle catégorie</label>
-          <input className="field-input" placeholder="Nom de la catégorie…" />
-        </div>
-        <div style={{ marginTop: "8px" }}>
-          <button className="btn-sm primary">Créer</button>
-        </div>
-      </div>
+     
     </div>
   );
 };

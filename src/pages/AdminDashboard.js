@@ -1,6 +1,6 @@
 // pages/AdminDashboard.jsx
 import { useState } from "react";
-import Sidebar from "../components/Sidebar"; // Changé: utiliser le Sidebar unifié
+import Sidebar from "../components/Sidebar";
 import Topbar from "../components/AdminDashboard/Topbar";
 import DashboardPanel from "../components/AdminDashboard/DashboardPanel";
 import UsersPanel from "../components/AdminDashboard/UsersPanel";
@@ -9,15 +9,33 @@ import StatsPanel from "../components/AdminDashboard/StatsPanel";
 import RolesPanel from "../components/AdminDashboard/RolesPanel";
 import SettingsPanel from "../components/AdminDashboard/SettingsPanel";
 import AddUserModal from "../components/AdminDashboard/AddUserModal";
+import ProjectsPanel from "../components/AdminDashboard/ProjectsPanel";
+import ProjectAssetsPage from "../components/AdminDashboard/ProjectAssetsPage";
+import CategoriePanel from "../components/AdminDashboard/CategoriePanel";
 import "../components/AdminDashboard/adminDashboard.css";
 
 const AdminDashboard = () => {
   const [activePanel, setActivePanel] = useState("dashboard");
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
+  const [selectedProjectId, setSelectedProjectId] = useState(null); // ← Ajouté
 
   const openModal = () => setIsModalOpen(true);
   const closeModal = () => setIsModalOpen(false);
+
+  // Fonction pour ouvrir les assets d'un projet
+  const openProjectAssets = (projectId) => {
+    console.log('🟣 Ouverture des assets du projet:', projectId);
+    setSelectedProjectId(projectId);
+    setActivePanel("project-assets");
+  };
+
+  // Fonction pour revenir à la liste des projets
+  const backToProjects = () => {
+    console.log('🟣 Retour à la liste des projets');
+    setSelectedProjectId(null);
+    setActivePanel("gestion");
+  };
 
   const renderPanel = () => {
     switch (activePanel) {
@@ -31,6 +49,12 @@ const AdminDashboard = () => {
         return <StatsPanel />;
       case "roles":
         return <RolesPanel />;
+      case "gestion":
+        return <ProjectsPanel onOpenProject={openProjectAssets} />; // ← Passez la prop
+      case "project-assets": // ← Nouveau panel
+        return <ProjectAssetsPage projectId={selectedProjectId} onBack={backToProjects} />;
+      case "categorie":
+        return <CategoriePanel />;
       case "settings":
         return <SettingsPanel />;
       default:
