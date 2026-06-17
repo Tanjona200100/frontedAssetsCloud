@@ -1,11 +1,12 @@
 // src/components/UserDashboard/AssetsPanel.jsx
-import React, { useContext, useState, useEffect, useCallback } from 'react';
+import React, { useContext, useState, useEffect, useCallback, useMemo } from 'react';
 import { UserContext } from '../../pages/UserDashboard';
 import ModelViewer from './ModelViewer';
-import { LiaEyeSolid, LiaDownloadSolid, LiaTrashAltSolid, LiaUploadSolid, LiaLockSolid, LiaGlobeSolid, LiaImageSolid } from 'react-icons/lia';
+import { LiaEyeSolid, LiaDownloadSolid, LiaTrashAltSolid, LiaUploadSolid, LiaLockSolid, LiaGlobeSolid, LiaImageSolid, LiaUserSolid, LiaFolderOpen, LiaTagSolid } from 'react-icons/lia';
 import { PiCubeLight } from "react-icons/pi";
 import { FaRegFile } from "react-icons/fa6";
 import { RiDossierFill } from "react-icons/ri";
+import { MdSearch, MdClose, MdFilterList } from 'react-icons/md';
 
 const API_BASE_URL = process.env.REACT_APP_API_BASE_URL || process.env.REACT_APP_API_URL || 'http://192.168.2.160:5000/api';
 
@@ -34,7 +35,7 @@ const getUserData = () => {
   return {};
 };
 
-export default function AssetsPanel() {
+export default function AssetsPanel({ searchQuery = '' }) {
   const { role, openPreview } = useContext(UserContext);
   const isGfx = role === 'gfx';
 
@@ -50,12 +51,19 @@ export default function AssetsPanel() {
   const [totalPages, setTotalPages] = useState(1);
   const [totalAssets, setTotalAssets] = useState(0);
 
+  // États pour les filtres avancés
   const [filters, setFilters] = useState({
+    search: searchQuery,
     visibility: '',
     file_type: '',
-    search: ''
+    category: '',
+    project: '',
+    created_by: '',
+    date_from: '',
+    date_to: ''
   });
 
+  const [showFilters, setShowFilters] = useState(false);
   const [showUploadModal, setShowUploadModal] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [selectedFiles, setSelectedFiles] = useState([]);
@@ -74,6 +82,22 @@ export default function AssetsPanel() {
   const [showModelViewer, setShowModelViewer] = useState(false);
   const [selectedModel, setSelectedModel] = useState(null);
   const [hoveredAssetId, setHoveredAssetId] = useState(null);
+  const [projects, setProjects] = useState([]);
+  const [categories, setCategories] = useState([]);
+  const [users, setUsers] = useState([]);
+  const [selectedProject, setSelectedProject] = useState('');
+  const [selectedCategory, setSelectedCategory] = useState('');
+  const [loadingProjects, setLoadingProjects] = useState(false);
+  const [loadingCategories, setLoadingCategories] = useState(false);
+  const [loadingUsers, setLoadingUsers] = useState(false);
+
+  // Synchroniser avec la recherche de la topbar
+  useEffect(() => {
+    if (searchQuery !== filters.search) {
+      setFilters(prev => ({ ...prev, search: searchQuery }));
+      setPage(1);
+    }
+  }, [searchQuery]);
 
   // Vérifier si l'utilisateur peut supprimer l'asset (admin ou propriétaire)
   const canDeleteAsset = (asset) => {
@@ -102,9 +126,16 @@ export default function AssetsPanel() {
       const params = new URLSearchParams();
       params.append('page', page);
       params.append('limit', 20);
+      
+      // Ajouter tous les filtres
+      if (filters.search) params.append('search', filters.search);
       if (filters.visibility) params.append('visibility', filters.visibility);
       if (filters.file_type) params.append('file_type', filters.file_type);
-      if (filters.search) params.append('search', filters.search);
+      if (filters.category) params.append('category_id', filters.category);
+      if (filters.project) params.append('project_id', filters.project);
+      if (filters.created_by) params.append('created_by', filters.created_by);
+      if (filters.date_from) params.append('date_from', filters.date_from);
+      if (filters.date_to) params.append('date_to', filters.date_to);
 
       const response = await fetch(`${API_BASE_URL}/assets?${params.toString()}`, {
         headers: {
@@ -129,6 +160,109 @@ export default function AssetsPanel() {
       setLoading(false);
     }
   }, [page, filters]);
+
+  const fetchProjects = useCallback(async () => {
+    setLoadingProjects(true);
+    try {
+      const response = await fetch(`${API_BASE_URL}/projects/simple`, {
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        }
+      });
+      if (!response.ok) throw new Error('Erreur chargement projets');
+      const data = await response.json();
+      setProjects(data.projects || []);
+    } catch (err) {
+      console.error('Erreur fetchProjects:', err);
+    } finally {
+      setLoadingProjects(false);
+    }
+  }, []);
+
+  const fetchCategories = useCallback(async () => {
+    setLoadingCategories(true);
+    try {
+      const response = await fetch(`${API_BASE_URL}/categories`, {
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        }
+      });
+      if (!response.ok) throw new Error('Erreur chargement catégories');
+      const data = await response.json();
+      setCategories(data.categories || []);
+    } catch (err) {
+      console.error('Erreur fetchCategories:', err);
+    } finally {
+      setLoadingCategories(false);
+    }
+  }, []);
+
+  const fetchUsers = useCallback(async () => {
+    setLoadingUsers(true);
+    try {
+      // Essayer plusieurs endpoints
+      let usersData = [];
+      try {
+        const response = await fetch(`${API_BASE_URL}/users`, {
+          headers: {
+            'Authorization': `Bearer ${localStorage.getItem('token')}`
+          }
+        });
+        if (response.ok) {
+          const data = await response.json();
+          usersData = data.users || data.data || data;
+        }
+      } catch (e) {
+        console.log('Endpoint /users non disponible');
+      }
+
+      if (usersData.length === 0) {
+        try {
+          const response = await fetch(`${API_BASE_URL}/admin/users`, {
+            headers: {
+              'Authorization': `Bearer ${localStorage.getItem('token')}`
+            }
+          });
+          if (response.ok) {
+            const data = await response.json();
+            usersData = data.users || data.data || data;
+          }
+        } catch (e) {
+          console.log('Endpoint /admin/users non disponible');
+        }
+      }
+
+      if (usersData.length === 0) {
+        // Fallback: extraire des assets
+        const response = await fetch(`${API_BASE_URL}/assets?limit=100`, {
+          headers: {
+            'Authorization': `Bearer ${localStorage.getItem('token')}`
+          }
+        });
+        if (response.ok) {
+          const data = await response.json();
+          const assetsData = data.data || data.assets || [];
+          const userMap = new Map();
+          assetsData.forEach(asset => {
+            const userId = asset.created_by || asset.uploaded_by || asset.user_id;
+            if (userId && !userMap.has(userId)) {
+              userMap.set(userId, {
+                id: userId,
+                name: asset.created_by_name || asset.uploaded_by_name || `Utilisateur ${userId}`
+              });
+            }
+          });
+          usersData = Array.from(userMap.values());
+        }
+      }
+
+      setUsers(usersData);
+    } catch (err) {
+      console.error('Erreur fetchUsers:', err);
+    } finally {
+      setLoadingUsers(false);
+    }
+  }, []);
 
   const handleMultipleUpload = async (event) => {
     event.preventDefault();
@@ -163,7 +297,12 @@ export default function AssetsPanel() {
       if (uploadTitle) formData.append('default_title', uploadTitle);
       if (uploadDescription) formData.append('default_description', uploadDescription);
       if (uploadTriangleCount) formData.append('triangle_counts', uploadTriangleCount);
-
+      if (selectedProject) {
+        formData.append('project_id', selectedProject);
+      }
+      if (selectedCategory) {
+        formData.append('categories', selectedCategory);
+      }
       const response = await fetch(`${API_BASE_URL}/assets/upload-multiple`, {
         method: 'POST',
         headers: {
@@ -215,6 +354,8 @@ export default function AssetsPanel() {
     setUploadCapture(null);
     setUploadCapturePreview(null);
     setUploadTriangleCount('');
+    setSelectedProject('');
+    setSelectedCategory('');
     setUploadProgress({});
   };
 
@@ -323,23 +464,41 @@ export default function AssetsPanel() {
       setUploadCapturePreview(previewUrl);
     }
   };
-  const [searchTimeout, setSearchTimeout] = useState(null);
-  const handleSearch = (value) => {
-    if (searchTimeout) clearTimeout(searchTimeout);
-    setSearchTimeout(setTimeout(() => {
-      handleFilterChange('search', value);
-    }, 500));
+
+  // Réinitialiser tous les filtres
+  const resetFilters = () => {
+    setFilters({
+      search: '',
+      visibility: '',
+      file_type: '',
+      category: '',
+      project: '',
+      created_by: '',
+      date_from: '',
+      date_to: ''
+    });
+    setPage(1);
   };
+
+  // Compter le nombre de filtres actifs
+  const activeFiltersCount = useMemo(() => {
+    let count = 0;
+    if (filters.search) count++;
+    if (filters.visibility) count++;
+    if (filters.file_type) count++;
+    if (filters.category) count++;
+    if (filters.project) count++;
+    if (filters.created_by) count++;
+    if (filters.date_from || filters.date_to) count++;
+    return count;
+  }, [filters]);
 
   useEffect(() => {
     fetchAssets();
-  }, [fetchAssets]);
-
-  useEffect(() => {
-    return () => {
-      if (searchTimeout) clearTimeout(searchTimeout);
-    };
-  }, [searchTimeout]);
+    fetchProjects();
+    fetchCategories();
+    fetchUsers();
+  }, [fetchAssets, fetchProjects, fetchCategories, fetchUsers]);
 
   if (loading && assets.length === 0) {
     return (
@@ -356,40 +515,66 @@ export default function AssetsPanel() {
           <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
             <div>
               <span className="card-title">{isGfx ? 'Assets créatifs' : 'Assets techniques'}</span>
-              <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10, color: 'var(--dim)', marginLeft: 10 }}>{totalAssets} fichiers</span>
+              <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10, color: 'var(--dim)', marginLeft: 10 }}>
+                {totalAssets} fichiers
+                {activeFiltersCount > 0 && ` • ${activeFiltersCount} filtre(s) actif(s)`}
+              </span>
             </div>
 
-            <select
-              value={filters.visibility}
-              onChange={(e) => handleFilterChange('visibility', e.target.value)}
-              style={{ background: 'rgba(0,0,0,.3)', border: '1px solid rgba(255,255,255,.1)', borderRadius: 6, padding: '4px 8px', color: 'white', fontSize: 12 }}
+            <button
+              onClick={() => setShowFilters(!showFilters)}
+              style={{
+                background: showFilters ? 'rgba(59,130,246,.2)' : 'rgba(255,255,255,.05)',
+                border: `1px solid ${showFilters ? 'rgba(59,130,246,.4)' : 'rgba(255,255,255,.1)'}`,
+                borderRadius: 6,
+                padding: '4px 10px',
+                color: showFilters ? '#3B82F6' : 'var(--dim)',
+                cursor: 'pointer',
+                fontSize: 12,
+                display: 'flex',
+                alignItems: 'center',
+                gap: 6
+              }}
             >
-              <option value="">Tous</option>
-              <option value="public">Public</option>
-              <option value="private">Privé</option>
-            </select>
+              <MdFilterList size={14} />
+              Filtres
+              {activeFiltersCount > 0 && (
+                <span style={{
+                  background: '#3B82F6',
+                  color: 'white',
+                  borderRadius: '50%',
+                  padding: '1px 6px',
+                  fontSize: 10,
+                  marginLeft: 2
+                }}>
+                  {activeFiltersCount}
+                </span>
+              )}
+            </button>
 
-            <select
-              value={filters.file_type}
-              onChange={(e) => handleFilterChange('file_type', e.target.value)}
-              style={{ background: 'rgba(0,0,0,.3)', border: '1px solid rgba(255,255,255,.1)', borderRadius: 6, padding: '4px 8px', color: 'white', fontSize: 12 }}
-            >
-              <option value="">Tous types</option>
-              <option value="image">Images</option>
-              <option value="video">Vidéos</option>
-              <option value="3d_model">Modèles 3D</option>
-              <option value="archive">Archives</option>
-              <option value="document">Documents</option>
-            </select>
+            {activeFiltersCount > 0 && (
+              <button
+                onClick={resetFilters}
+                style={{
+                  background: 'rgba(255,255,255,.05)',
+                  border: '1px solid rgba(255,255,255,.1)',
+                  borderRadius: 6,
+                  padding: '4px 10px',
+                  color: 'var(--dim)',
+                  cursor: 'pointer',
+                  fontSize: 12,
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 6
+                }}
+              >
+                <MdClose size={14} />
+                Réinitialiser
+              </button>
+            )}
           </div>
 
           <div style={{ display: 'flex', gap: 8 }}>
-            <input
-              type="text"
-              placeholder="Rechercher..."
-              onChange={(e) => handleSearch(e.target.value)}
-              style={{ background: 'rgba(0,0,0,.3)', border: '1px solid rgba(255,255,255,.1)', borderRadius: 6, padding: '4px 12px', color: 'white', fontSize: 12, width: 180 }}
-            />
             <button
               className="btn btn-primary"
               onClick={() => setShowUploadModal(true)}
@@ -400,6 +585,156 @@ export default function AssetsPanel() {
             </button>
           </div>
         </div>
+
+        {/* Panneau des filtres avancés */}
+        {showFilters && (
+          <div style={{
+            padding: '16px 18px',
+            borderTop: '1px solid rgba(255,255,255,.06)',
+            background: 'rgba(0,0,0,.2)',
+            display: 'grid',
+            gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))',
+            gap: '12px'
+          }}>
+           
+
+            {/* Filtre par catégorie */}
+            <div>
+              <label style={{ fontSize: 10, color: 'var(--dim)', display: 'block', marginBottom: 4 }}>
+                <LiaTagSolid size={12} style={{ marginRight: 4 }} />
+                Catégorie
+              </label>
+              <select
+                value={filters.category}
+                onChange={(e) => handleFilterChange('category', e.target.value)}
+                style={{
+                  width: '100%',
+                  padding: '6px 10px',
+                  background: 'rgba(255,255,255,.05)',
+                  border: '1px solid rgba(255,255,255,.1)',
+                  borderRadius: 6,
+                  color: 'white',
+                  fontSize: 12
+                }}
+              >
+                <option value="">Toutes</option>
+                {categories.map(cat => (
+                  <option key={cat.id} value={cat.id}>
+                    {cat.icon || '📁'} {cat.display_name || cat.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {/* Filtre par projet */}
+            <div>
+              <label style={{ fontSize: 10, color: 'var(--dim)', display: 'block', marginBottom: 4 }}>
+                <LiaFolderOpen size={12} style={{ marginRight: 4 }} />
+                Projet
+              </label>
+              <select
+                value={filters.project}
+                onChange={(e) => handleFilterChange('project', e.target.value)}
+                style={{
+                  width: '100%',
+                  padding: '6px 10px',
+                  background: 'rgba(255,255,255,.05)',
+                  border: '1px solid rgba(255,255,255,.1)',
+                  borderRadius: 6,
+                  color: 'white',
+                  fontSize: 12
+                }}
+              >
+                <option value="">Tous</option>
+                {projects.map(project => (
+                  <option key={project.id} value={project.id}>
+                    {project.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {/* Filtre par type */}
+            <div>
+              <label style={{ fontSize: 10, color: 'var(--dim)', display: 'block', marginBottom: 4 }}>Type</label>
+              <select
+                value={filters.file_type}
+                onChange={(e) => handleFilterChange('file_type', e.target.value)}
+                style={{
+                  width: '100%',
+                  padding: '6px 10px',
+                  background: 'rgba(255,255,255,.05)',
+                  border: '1px solid rgba(255,255,255,.1)',
+                  borderRadius: 6,
+                  color: 'white',
+                  fontSize: 12
+                }}
+              >
+                <option value="">Tous</option>
+                <option value="image">🖼️ Images</option>
+                <option value="video">🎬 Vidéos</option>
+                <option value="3d_model">🎮 Modèles 3D</option>
+                <option value="archive">📦 Archives</option>
+                <option value="document">📄 Documents</option>
+                <option value="audio">🎵 Audio</option>
+                <option value="other">📎 Autres</option>
+              </select>
+            </div>
+
+            {/* Filtre par visibilité */}
+            <div>
+              <label style={{ fontSize: 10, color: 'var(--dim)', display: 'block', marginBottom: 4 }}>Visibilité</label>
+              <select
+                value={filters.visibility}
+                onChange={(e) => handleFilterChange('visibility', e.target.value)}
+                style={{
+                  width: '100%',
+                  padding: '6px 10px',
+                  background: 'rgba(255,255,255,.05)',
+                  border: '1px solid rgba(255,255,255,.1)',
+                  borderRadius: 6,
+                  color: 'white',
+                  fontSize: 12
+                }}
+              >
+                <option value="">Toutes</option>
+                <option value="public">🌍 Public</option>
+                <option value="team">👥 Team</option>
+                <option value="private">🔒 Privé</option>
+              </select>
+            </div>
+
+            {/* Filtre par créateur */}
+            <div>
+              <label style={{ fontSize: 10, color: 'var(--dim)', display: 'block', marginBottom: 4 }}>
+                <LiaUserSolid size={12} style={{ marginRight: 4 }} />
+                Créateur
+              </label>
+              <select
+                value={filters.created_by}
+                onChange={(e) => handleFilterChange('created_by', e.target.value)}
+                style={{
+                  width: '100%',
+                  padding: '6px 10px',
+                  background: 'rgba(255,255,255,.05)',
+                  border: '1px solid rgba(255,255,255,.1)',
+                  borderRadius: 6,
+                  color: 'white',
+                  fontSize: 12
+                }}
+              >
+                <option value="">Tous</option>
+                {users.map(user => (
+                  <option key={user.id} value={user.id}>
+                    {user.first_name || user.name || user.email || `Utilisateur ${user.id}`}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+       
+          </div>
+        )}
 
         {error && (
           <div style={{ padding: '12px 18px', background: 'rgba(220,38,38,.15)', color: '#ef4444', fontSize: 12, borderBottom: '1px solid rgba(220,38,38,.3)' }}>
@@ -509,7 +844,20 @@ export default function AssetsPanel() {
                       </div>
                     )
                   ) : (
-                    <div style={{ fontSize: 64, opacity: 0.5 }}><FaRegFile /></div>
+                    asset.capture_url ? (
+                      <img
+                        src={`${API_BASE_URL.replace('/api', '')}${asset.capture_url}`}
+                        alt={`Aperçu de ${asset.title || asset.name}`}
+                        style={{
+                          width: '100%',
+                          height: '100%',
+                          objectFit: 'cover',
+                          objectPosition: 'center'
+                        }}
+                      />
+                    ) : (
+                      <div style={{ fontSize: 64, opacity: 0.5 }}><FaRegFile /></div>
+                    )
                   )}
                 </div>
 
@@ -538,6 +886,59 @@ export default function AssetsPanel() {
                       <PiCubeLight /> Modèle 3D
                     </div>
                   )}
+
+                  {/* Tags d'information */}
+                  <div style={{
+                    display: 'flex',
+                    gap: 4,
+                    flexWrap: 'wrap',
+                    marginBottom: 8
+                  }}>
+                    {asset.category_name && (
+                      <span style={{
+                        fontSize: 9,
+                        background: 'rgba(59,130,246,.15)',
+                        color: '#3B82F6',
+                        padding: '2px 8px',
+                        borderRadius: 10
+                      }}>
+                        {asset.category_name}
+                      </span>
+                    )}
+                    {asset.project_name && (
+                      <span style={{
+                        fontSize: 9,
+                        background: 'rgba(16,185,129,.15)',
+                        color: '#10B981',
+                        padding: '2px 8px',
+                        borderRadius: 10
+                      }}>
+                        {asset.project_name}
+                      </span>
+                    )}
+                    {asset.created_by_name && (
+                      <span style={{
+                        fontSize: 9,
+                        background: 'rgba(139,92,246,.15)',
+                        color: '#8B5CF6',
+                        padding: '2px 8px',
+                        borderRadius: 10
+                      }}>
+                        <LiaUserSolid size={10} style={{ marginRight: 2 }} />
+                        {asset.created_by_name}
+                      </span>
+                    )}
+                    <span style={{
+                      fontSize: 9,
+                      background: asset.visibility === 'public' ? 'rgba(16,185,129,.15)' : 'rgba(239,68,68,.15)',
+                      color: asset.visibility === 'public' ? '#10B981' : '#EF4444',
+                      padding: '2px 8px',
+                      borderRadius: 10
+                    }}>
+                      {asset.visibility === 'public' ? '🌍 Public' : 
+                       asset.visibility === 'team' ? '👥 Team' : '🔒 Privé'}
+                    </span>
+                  </div>
 
                   {/* Actions */}
                   <div style={{
@@ -574,11 +975,11 @@ export default function AssetsPanel() {
                       onClick={() => handleDownload(asset.id, asset.name)}
                       style={{
                         flex: 1,
-                        background: 'rgba(16,185,129,.15)',
+                        background: 'rgba(255,255,255,.05)',
                         border: 'none',
-                        padding: '7px',
+                        padding: '7px 12px',
                         borderRadius: 6,
-                        color: '#10B981',
+                        color: '#888',
                         cursor: 'pointer',
                         fontSize: 12,
                         display: 'flex',
@@ -587,12 +988,11 @@ export default function AssetsPanel() {
                         gap: 6,
                         transition: 'background 0.2s'
                       }}
-                      onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(16,185,129,.25)'}
-                      onMouseLeave={(e) => e.currentTarget.style.background = 'rgba(16,185,129,.15)'}
+                      onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(255,255,255,.1)'}
+                      onMouseLeave={(e) => e.currentTarget.style.background = 'rgba(255,255,255,.05)'}
                       title="Télécharger"
                     >
                       <LiaDownloadSolid size={14} />
-                      Télécharger
                     </button>
                     
                     {/* Bouton Supprimer - uniquement si admin ou propriétaire */}
@@ -606,7 +1006,7 @@ export default function AssetsPanel() {
                           flex: 1,
                           background: 'rgba(220,38,38,.1)',
                           border: 'none',
-                          padding: '7px',
+                          padding: '7px 12px',
                           borderRadius: 6,
                           color: '#ef4444',
                           cursor: 'pointer',
@@ -622,7 +1022,6 @@ export default function AssetsPanel() {
                         title="Supprimer"
                       >
                         <LiaTrashAltSolid size={14} />
-                        Supprimer
                       </button>
                     )}
                   </div>
@@ -635,7 +1034,23 @@ export default function AssetsPanel() {
         {assets.length === 0 && !loading && (
           <div style={{ padding: '60px', textAlign: 'center', color: '#666' }}>
             <div style={{ fontSize: 48, marginBottom: 16 }}><RiDossierFill /></div>
-            <div>Aucun asset trouvé</div>
+            <div>Aucun asset trouvé{activeFiltersCount > 0 ? ' avec les filtres actuels' : ''}</div>
+            {activeFiltersCount > 0 && (
+              <button
+                onClick={resetFilters}
+                style={{
+                  marginTop: 16,
+                  background: 'rgba(255,255,255,.1)',
+                  border: 'none',
+                  padding: '8px 16px',
+                  borderRadius: 8,
+                  color: 'white',
+                  cursor: 'pointer'
+                }}
+              >
+                Réinitialiser les filtres
+              </button>
+            )}
           </div>
         )}
 
@@ -664,6 +1079,7 @@ export default function AssetsPanel() {
         )}
       </div>
 
+      {/* Le reste du code (modaux) reste identique... */}
       {/* Modal d'upload multiple */}
       {showUploadModal && (
         <div className="modal-overlay" onClick={() => { setShowUploadModal(false); resetUploadForm(); }}>
@@ -750,14 +1166,79 @@ export default function AssetsPanel() {
                   </div>
                   <div className="upload-metadata-row">
                     <div className="upload-metadata-field">
+                      <label className="upload-label">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" width="14" height="14">
+                          <path d="M20 7h-4.18A3 3 0 0 0 16 5.18V4a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2z" />
+                        </svg>
+                        Projet
+                      </label>
+                      <select
+                        className="upload-select"
+                        value={selectedProject}
+                        onChange={(e) => setSelectedProject(e.target.value)}
+                        style={{
+                          width: '100%',
+                          padding: '8px 12px',
+                          background: 'rgba(0,0,0,.3)',
+                          border: '1px solid rgba(255,255,255,.1)',
+                          borderRadius: 6,
+                          color: 'white',
+                          fontSize: 13
+                        }}
+                      >
+                        <option value="">Aucun projet</option>
+                        {projects.map((project) => (
+                          <option key={project.id} value={project.id}>
+                            {project.name}
+                          </option>
+                        ))}
+                      </select>
+                      <div className="upload-hint">Associer l'asset à un projet existant</div>
+                    </div>
+
+                    <div className="upload-metadata-field">
+                      <label className="upload-label">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" width="14" height="14">
+                          <rect x="2" y="2" width="20" height="20" rx="2.18" />
+                          <circle cx="8.5" cy="8.5" r="2.5" />
+                          <path d="M21 15l-5-5L5 21" />
+                        </svg>
+                        Catégorie
+                      </label>
+                      <select
+                        className="upload-select"
+                        value={selectedCategory}
+                        onChange={(e) => setSelectedCategory(e.target.value)}
+                        style={{
+                          width: '100%',
+                          padding: '8px 12px',
+                          background: 'rgba(0,0,0,.3)',
+                          border: '1px solid rgba(255,255,255,.1)',
+                          borderRadius: 6,
+                          color: 'white',
+                          fontSize: 13
+                        }}
+                      >
+                        <option value="">Aucune catégorie</option>
+                        {categories.map((category) => (
+                          <option key={category.id} value={category.id}>
+                            {category.icon || '🏷️'} {category.display_name}
+                          </option>
+                        ))}
+                      </select>
+                      <div className="upload-hint">Associer l'asset à une catégorie</div>
+                    </div>
+                  </div>
+                  <div className="upload-metadata-row">
+                    <div className="upload-metadata-field">
                       <label className="upload-label"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" width="14" height="14"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" /><circle cx="12" cy="7" r="4" /></svg>Description</label>
                       <textarea className="upload-textarea" rows="2" value={uploadDescription} onChange={(e) => setUploadDescription(e.target.value)} placeholder="Optionnelle - Description commune à tous les fichiers" />
                     </div>
                     <div className="upload-metadata-field">
                       <label className="upload-label"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" width="14" height="14"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" /><circle cx="12" cy="12" r="3" /></svg>Visibilité</label>
                       <div className="upload-visibility-options">
-                        <label className="upload-radio"><input type="radio" value="private" checked={uploadVisibility === 'private'} onChange={(e) => setUploadVisibility(e.target.value)} /><span><LiaLockSolid /> Privé</span></label>
                         <label className="upload-radio"><input type="radio" value="public" checked={uploadVisibility === 'public'} onChange={(e) => setUploadVisibility(e.target.value)} /><span><LiaGlobeSolid /> Public</span></label>
+                        <label className="upload-radio"><input type="radio" value="private" checked={uploadVisibility === 'private'} onChange={(e) => setUploadVisibility(e.target.value)} /><span><LiaLockSolid /> Privé</span></label>
                       </div>
                     </div>
                   </div>
@@ -849,6 +1330,379 @@ export default function AssetsPanel() {
         @keyframes spin {
           from { transform: rotate(0deg); }
           to { transform: rotate(360deg); }
+        }
+        
+        .modal-overlay {
+          position: fixed;
+          top: 0;
+          left: 0;
+          right: 0;
+          bottom: 0;
+          background: rgba(0,0,0,.7);
+          backdrop-filter: blur(4px);
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          z-index: 1000;
+        }
+        
+        .upload-modal-container {
+          background: #0a0f1a;
+          border: 1px solid rgba(255,255,255,.1);
+          border-radius: 16px;
+          width: 90%;
+          max-width: 800px;
+          max-height: 90vh;
+          display: flex;
+          flex-direction: column;
+          overflow: hidden;
+        }
+        
+        .upload-modal-header {
+          padding: 16px 20px;
+          border-bottom: 1px solid rgba(255,255,255,.1);
+          display: flex;
+          align-items: center;
+          gap: 12px;
+        }
+        
+        .upload-modal-icon {
+          width: 40px;
+          height: 40px;
+          border-radius: 10px;
+          background: rgba(59,130,246,.15);
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          color: #3B82F6;
+        }
+        
+        .upload-modal-title-section {
+          flex: 1;
+        }
+        
+        .upload-modal-title {
+          margin: 0;
+          font-size: 16px;
+          font-weight: 600;
+        }
+        
+        .upload-modal-subtitle {
+          margin: 0;
+          font-size: 12px;
+          color: var(--dim);
+        }
+        
+        .upload-modal-close {
+          background: none;
+          border: none;
+          font-size: 24px;
+          cursor: pointer;
+          color: var(--text-muted);
+          padding: 4px;
+        }
+        
+        .upload-modal-body {
+          padding: 20px;
+          overflow-y: auto;
+          flex: 1;
+        }
+        
+        .upload-dropzone {
+          border: 2px dashed rgba(255,255,255,.1);
+          border-radius: 12px;
+          padding: 30px;
+          text-align: center;
+          cursor: pointer;
+          transition: all 0.2s;
+          margin-bottom: 16px;
+        }
+        
+        .upload-dropzone:hover {
+          border-color: rgba(59,130,246,.4);
+          background: rgba(59,130,246,.05);
+        }
+        
+        .upload-dropzone-icon {
+          color: #666;
+          margin-bottom: 12px;
+        }
+        
+        .upload-dropzone-title {
+          font-size: 14px;
+          color: var(--text);
+          margin-bottom: 4px;
+        }
+        
+        .upload-dropzone-hint {
+          font-size: 11px;
+          color: var(--dim);
+        }
+        
+        .upload-files-list {
+          margin-bottom: 16px;
+        }
+        
+        .upload-files-header {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          margin-bottom: 8px;
+        }
+        
+        .upload-files-count {
+          font-size: 12px;
+          color: var(--dim);
+        }
+        
+        .upload-files-clear {
+          background: none;
+          border: none;
+          color: #ef4444;
+          cursor: pointer;
+          font-size: 12px;
+        }
+        
+        .upload-files-grid {
+          display: grid;
+          gap: 6px;
+          max-height: 200px;
+          overflow-y: auto;
+        }
+        
+        .upload-file-item {
+          display: flex;
+          align-items: center;
+          gap: 10px;
+          padding: 8px 12px;
+          background: rgba(255,255,255,.05);
+          border-radius: 6px;
+        }
+        
+        .upload-file-icon {
+          font-size: 20px;
+        }
+        
+        .upload-file-info {
+          flex: 1;
+        }
+        
+        .upload-file-name {
+          font-size: 12px;
+          color: white;
+        }
+        
+        .upload-file-size {
+          font-size: 10px;
+          color: var(--dim);
+        }
+        
+        .upload-file-remove {
+          background: none;
+          border: none;
+          color: #666;
+          cursor: pointer;
+          padding: 4px;
+        }
+        
+        .upload-file-remove:hover {
+          color: #ef4444;
+        }
+        
+        .upload-metadata {
+          display: grid;
+          gap: 12px;
+        }
+        
+        .upload-metadata-row {
+          display: grid;
+          grid-template-columns: 1fr 1fr;
+          gap: 12px;
+        }
+        
+        .upload-metadata-field {
+          display: flex;
+          flex-direction: column;
+          gap: 4px;
+        }
+        
+        .upload-label {
+          font-size: 11px;
+          color: var(--dim);
+          display: flex;
+          align-items: center;
+          gap: 4px;
+        }
+        
+        .upload-input,
+        .upload-select,
+        .upload-textarea {
+          padding: 8px 12px;
+          background: rgba(0,0,0,.3);
+          border: 1px solid rgba(255,255,255,.1);
+          border-radius: 6px;
+          color: white;
+          font-size: 13px;
+          outline: none;
+          width: 100%;
+        }
+        
+        .upload-input:focus,
+        .upload-select:focus,
+        .upload-textarea:focus {
+          border-color: #3B82F6;
+        }
+        
+        .upload-textarea {
+          resize: vertical;
+          min-height: 60px;
+        }
+        
+        .upload-visibility-options {
+          display: flex;
+          gap: 12px;
+        }
+        
+        .upload-radio {
+          display: flex;
+          align-items: center;
+          gap: 6px;
+          font-size: 12px;
+          color: var(--text);
+          cursor: pointer;
+        }
+        
+        .upload-radio input[type="radio"] {
+          accent-color: #3B82F6;
+        }
+        
+        .upload-hint {
+          font-size: 10px;
+          color: var(--dim);
+          margin-top: 2px;
+        }
+        
+        .upload-capture-area {
+          border: 1px solid rgba(255,255,255,.1);
+          border-radius: 8px;
+          padding: 12px;
+          min-height: 100px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+        }
+        
+        .capture-preview {
+          position: relative;
+          width: 100%;
+          max-height: 200px;
+        }
+        
+        .capture-preview img {
+          width: 100%;
+          max-height: 200px;
+          object-fit: contain;
+          border-radius: 6px;
+        }
+        
+        .remove-capture {
+          position: absolute;
+          top: 4px;
+          right: 4px;
+          background: rgba(0,0,0,.7);
+          border: none;
+          color: white;
+          width: 24px;
+          height: 24px;
+          border-radius: 50%;
+          cursor: pointer;
+          font-size: 16px;
+        }
+        
+        .capture-upload-label {
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          gap: 4px;
+          cursor: pointer;
+          padding: 20px;
+          width: 100%;
+        }
+        
+        .capture-upload-icon {
+          color: #666;
+        }
+        
+        .capture-upload-hint {
+          font-size: 10px;
+          color: var(--dim);
+        }
+        
+        .upload-error {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          padding: 8px 12px;
+          background: rgba(220,38,38,.15);
+          border-radius: 6px;
+          color: #ef4444;
+          font-size: 12px;
+          margin-top: 12px;
+        }
+        
+        .upload-modal-footer {
+          padding: 16px 20px;
+          border-top: 1px solid rgba(255,255,255,.1);
+          display: flex;
+          justify-content: flex-end;
+          gap: 12px;
+        }
+        
+        .upload-btn {
+          padding: 8px 20px;
+          border-radius: 8px;
+          cursor: pointer;
+          font-size: 13px;
+          transition: all 0.2s;
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          border: none;
+        }
+        
+        .upload-btn-secondary {
+          background: rgba(255,255,255,.05);
+          color: var(--text);
+        }
+        
+        .upload-btn-secondary:hover {
+          background: rgba(255,255,255,.1);
+        }
+        
+        .upload-btn-primary {
+          background: #3B82F6;
+          color: white;
+        }
+        
+        .upload-btn-primary:hover:not(:disabled) {
+          background: #2563eb;
+        }
+        
+        .upload-btn-primary:disabled {
+          opacity: 0.5;
+          cursor: not-allowed;
+        }
+        
+        .upload-spinner {
+          animation: spin 1s linear infinite;
+          width: 16px;
+          height: 16px;
+        }
+        
+        @media (max-width: 768px) {
+          .upload-metadata-row {
+            grid-template-columns: 1fr;
+          }
         }
       `}</style>
     </>

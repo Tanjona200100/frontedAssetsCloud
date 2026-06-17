@@ -1,5 +1,6 @@
 // src/components/UserDashboard/ProjectAssetsPage.jsx
 import React, { useState, useEffect } from 'react';
+import ModelViewer from '../UserDashboard/ModelViewer';
 import { MdArrowBack, MdAdd } from "react-icons/md";
 import { LiaEyeSolid, LiaDownloadSolid, LiaTrashAltSolid } from 'react-icons/lia';
 import { PiCubeLight } from "react-icons/pi";
@@ -69,6 +70,16 @@ const getUserData = () => {
   return {};
 };
 
+// Fonction pour ouvrir un preview simple (alternative à openPreview)
+const openSimplePreview = (asset) => {
+  if (asset.capture_url) {
+    const url = `${API_BASE_URL.replace('/api', '')}${asset.capture_url}`;
+    window.open(url, '_blank');
+  } else {
+    alert(`📁 ${asset.title || asset.name}\n\n📄 Type: ${asset.file_type || 'Fichier'}\n📦 Taille: ${formatSize(asset.file_size)}`);
+  }
+};
+
 export default function ProjectAssetsPage({ projectId, onBack }) {
   const [project, setProject] = useState(null);
   const [assets, setAssets] = useState([]);
@@ -81,6 +92,10 @@ export default function ProjectAssetsPage({ projectId, onBack }) {
   const [showConfirmModal, setShowConfirmModal] = useState(false);
   const [assetToDelete, setAssetToDelete] = useState(null);
   const [hoveredAssetId, setHoveredAssetId] = useState(null);
+  
+  // State pour ModelViewer
+  const [showModelViewer, setShowModelViewer] = useState(false);
+  const [selectedModel, setSelectedModel] = useState(null);
   
   // Récupérer les données utilisateur
   const userData = getUserData();
@@ -226,6 +241,36 @@ export default function ProjectAssetsPage({ projectId, onBack }) {
     }
   };
   
+  // Ouvrir le preview d'un asset
+  const openAssetPreview = (asset) => {
+    if (is3DModel(asset)) {
+      const token = localStorage.getItem('token');
+      if (!token) { setError('Connectez-vous'); return; }
+
+      let cleanExt = (asset.ext || asset.file_ext || asset.extension || '')
+        .replace(/^\./, '')
+        .toLowerCase();
+
+      if (!cleanExt) {
+        const nameSource = asset.name || asset.title || '';
+        const dotIdx = nameSource.lastIndexOf('.');
+        if (dotIdx !== -1) cleanExt = nameSource.slice(dotIdx + 1).toLowerCase();
+      }
+
+      if (!cleanExt && asset.file_type === '3d_model') cleanExt = 'glb';
+
+      let fileName = asset.title || asset.name || 'model';
+      if (cleanExt && !fileName.toLowerCase().endsWith(`.${cleanExt}`)) {
+        fileName = `${fileName}.${cleanExt}`;
+      }
+
+      setSelectedModel({ id: asset.id, name: fileName, token, ext: cleanExt, asset });
+      setShowModelViewer(true);
+    } else {
+      openSimplePreview(asset);
+    }
+  };
+  
   if (loading) {
     return (
       <div style={{ display: 'flex', justifyContent: 'center', padding: '60px 20px' }}>
@@ -346,8 +391,9 @@ export default function ProjectAssetsPage({ projectId, onBack }) {
                   onMouseEnter={() => setHoveredAssetId(asset.id)}
                   onMouseLeave={() => setHoveredAssetId(null)}
                 >
-                  {/* Zone de preview */}
+                  {/* Zone de preview cliquable */}
                   <div
+                    onClick={() => openAssetPreview(asset)}
                     style={{
                       height: 200,
                       background: 'rgba(0,0,0,.4)',
@@ -402,6 +448,22 @@ export default function ProjectAssetsPage({ projectId, onBack }) {
                         <div style={{ textAlign: 'center' }}>
                           <div style={{ fontSize: 64, marginBottom: 8 }}><PiCubeLight /></div>
                           <div style={{ fontSize: 12, color: '#3b82f6' }}>Modèle 3D</div>
+                          {isHovered && (
+                            <div style={{
+                              position: 'absolute',
+                              bottom: 16,
+                              left: '50%',
+                              transform: 'translateX(-50%)',
+                              background: 'rgba(0,0,0,.8)',
+                              padding: '6px 14px',
+                              borderRadius: 20,
+                              fontSize: 12,
+                              color: '#10b981',
+                              whiteSpace: 'nowrap'
+                            }}>
+                              ✨ Cliquer pour visualiser
+                            </div>
+                          )}
                         </div>
                       )
                     ) : (
@@ -448,7 +510,7 @@ export default function ProjectAssetsPage({ projectId, onBack }) {
                       </div>
                     )}
                     
-                    {/* Actions */}
+                    {/* Actions - Style identique à AssetsPanel */}
                     <div style={{
                       display: 'flex',
                       gap: 8,
@@ -457,6 +519,7 @@ export default function ProjectAssetsPage({ projectId, onBack }) {
                       marginTop: 4
                     }}>
                       <button
+                        onClick={() => openAssetPreview(asset)}
                         style={{
                           flex: 1,
                           background: 'rgba(59,130,246,.15)',
@@ -482,11 +545,11 @@ export default function ProjectAssetsPage({ projectId, onBack }) {
                         onClick={() => handleDownload(asset.id, asset.name)}
                         style={{
                           flex: 1,
-                          background: 'rgba(16,185,129,.15)',
+                          background: 'rgba(255,255,255,.05)',
                           border: 'none',
-                          padding: '7px',
+                          padding: '7px 12px',
                           borderRadius: 6,
-                          color: '#10B981',
+                          color: '#888',
                           cursor: 'pointer',
                           fontSize: 12,
                           display: 'flex',
@@ -495,12 +558,11 @@ export default function ProjectAssetsPage({ projectId, onBack }) {
                           gap: 6,
                           transition: 'background 0.2s'
                         }}
-                        onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(16,185,129,.25)'}
-                        onMouseLeave={(e) => e.currentTarget.style.background = 'rgba(16,185,129,.15)'}
+                        onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(255,255,255,.1)'}
+                        onMouseLeave={(e) => e.currentTarget.style.background = 'rgba(255,255,255,.05)'}
                         title="Télécharger"
                       >
                         <LiaDownloadSolid size={14} />
-                        Télécharger
                       </button>
                       
                       {/* Bouton Retirer - uniquement si admin ou propriétaire */}
@@ -514,7 +576,7 @@ export default function ProjectAssetsPage({ projectId, onBack }) {
                             flex: 1,
                             background: 'rgba(220,38,38,.1)',
                             border: 'none',
-                            padding: '7px',
+                            padding: '7px 12px',
                             borderRadius: 6,
                             color: '#ef4444',
                             cursor: 'pointer',
@@ -530,7 +592,6 @@ export default function ProjectAssetsPage({ projectId, onBack }) {
                           title="Retirer du projet"
                         >
                           <LiaTrashAltSolid size={14} />
-                          Retirer
                         </button>
                       )}
                     </div>
@@ -567,41 +628,72 @@ export default function ProjectAssetsPage({ projectId, onBack }) {
                   gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))',
                   gap: '16px'
                 }}>
-                  {availableAssets.map((asset) => (
-                    <div
-                      key={asset.id}
-                      className="available-asset-card"
-                      style={{
-                        background: 'rgba(0,0,0,.3)',
-                        borderRadius: 10,
-                        overflow: 'hidden',
-                        border: '1px solid rgba(255,255,255,.06)',
-                        cursor: 'pointer',
-                        transition: 'transform 0.2s'
-                      }}
-                      onClick={() => handleAddAsset(asset.id)}
-                    >
-                      <div style={{
-                        height: 120,
-                        background: 'rgba(0,0,0,.4)',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center'
-                      }}>
-                        {is3DModel(asset) ? (
-                          <PiCubeLight size={48} style={{ opacity: 0.6 }} />
-                        ) : (
-                          <FaRegFile size={48} style={{ opacity: 0.6 }} />
-                        )}
-                      </div>
-                      <div style={{ padding: '12px' }}>
-                        <div style={{ fontWeight: 500, fontSize: 13 }}>{asset.title || asset.name}</div>
-                        <div style={{ fontSize: 10, color: '#666', marginTop: 4 }}>
-                          {formatSize(asset.file_size)} • {asset.file_type || 'Fichier'}
+                  {availableAssets.map((asset) => {
+                    const is3D = is3DModel(asset);
+                    return (
+                      <div
+                        key={asset.id}
+                        className="available-asset-card"
+                        style={{
+                          background: 'rgba(0,0,0,.3)',
+                          borderRadius: 10,
+                          overflow: 'hidden',
+                          border: '1px solid rgba(255,255,255,.06)',
+                          cursor: 'pointer',
+                          transition: 'transform 0.2s'
+                        }}
+                        onClick={() => handleAddAsset(asset.id)}
+                        onMouseEnter={(e) => {
+                          e.currentTarget.style.transform = 'translateY(-2px)';
+                          e.currentTarget.style.borderColor = 'rgba(59,130,246,.4)';
+                        }}
+                        onMouseLeave={(e) => {
+                          e.currentTarget.style.transform = 'translateY(0)';
+                          e.currentTarget.style.borderColor = 'rgba(255,255,255,.06)';
+                        }}
+                      >
+                        <div style={{
+                          height: 120,
+                          background: 'rgba(0,0,0,.4)',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center'
+                        }}>
+                          {is3D && asset.capture_url ? (
+                            <img
+                              src={`${API_BASE_URL.replace('/api', '')}${asset.capture_url}`}
+                              alt={asset.title || asset.name}
+                              style={{
+                                width: '100%',
+                                height: '100%',
+                                objectFit: 'cover'
+                              }}
+                            />
+                          ) : is3D ? (
+                            <PiCubeLight size={48} style={{ opacity: 0.6 }} />
+                          ) : asset.capture_url ? (
+                            <img
+                              src={`${API_BASE_URL.replace('/api', '')}${asset.capture_url}`}
+                              alt={asset.title || asset.name}
+                              style={{
+                                width: '100%',
+                                height: '100%',
+                                objectFit: 'cover'
+                              }}
+                            />
+                          ) : (
+                            <FaRegFile size={48} style={{ opacity: 0.6 }} />
+                          )}
+                        </div>
+                        <div style={{ padding: '12px' }}>
+                          <div style={{ fontWeight: 500, fontSize: 13 }}>{asset.title || asset.name}</div>
+                          <div style={{ fontSize: 10, color: '#666', marginTop: 4 }}>
+                            {formatSize(asset.file_size)} • {asset.file_type || 'Fichier'}
+                          </div>
                         </div>
                       </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
             </div>
@@ -626,6 +718,22 @@ export default function ProjectAssetsPage({ projectId, onBack }) {
             </div>
           </div>
         </div>
+      )}
+      
+      {/* Vue 3D ModelViewer */}
+      {showModelViewer && selectedModel && (
+        <ModelViewer
+          assetId={selectedModel.id}
+          assetName={selectedModel.name}
+          token={localStorage.getItem('token')}
+          assetExt={selectedModel.ext}
+          assetData={selectedModel.asset}
+          onClose={() => {
+            setShowModelViewer(false);
+            setSelectedModel(null);
+            setHoveredAssetId(null);
+          }}
+        />
       )}
       
       <style>{`
@@ -703,6 +811,10 @@ export default function ProjectAssetsPage({ projectId, onBack }) {
           color: var(--text);
         }
         
+        .modal-btn-cancel:hover {
+          background: rgba(255,255,255,.1);
+        }
+        
         .btn-primary {
           background: #3B82F6;
           border: none;
@@ -715,14 +827,28 @@ export default function ProjectAssetsPage({ projectId, onBack }) {
           gap: 6px;
         }
         
+        .btn-primary:hover {
+          background: rgba(59,130,246,.8);
+        }
+        
         .available-asset-card {
           cursor: pointer;
+        }
+        
+        .available-asset-card:hover {
+          transform: translateY(-2px);
+          border-color: rgba(59,130,246,.4);
         }
         
         .loading-spinner {
           font-family: "'JetBrains Mono', monospace";
           font-size: 12px;
           color: var(--dim);
+        }
+        
+        @keyframes spin {
+          from { transform: rotate(0deg); }
+          to { transform: rotate(360deg); }
         }
       `}</style>
     </>

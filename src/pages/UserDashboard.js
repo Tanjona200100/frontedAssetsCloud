@@ -275,7 +275,7 @@ export default function UserDashboard({ userData = {} }) {
         }
         return <ProjectAssetsPage projectId={selectedProjectId} onBack={backToProjects} />;
       case 'assets':
-        return <AssetsPanel searchQuery={searchQuery} />;
+  return <AssetsPanel searchQuery={searchQuery} />;
       case 'history':
         return <HistoryPanel />;
       case 'profile':

@@ -1,5 +1,5 @@
-// src/components/UserDashboard/CategoriesPanel.jsx
-import React, { useState, useEffect, useCallback } from 'react';
+// src/components/AdminDashboard/CategoriePanel.jsx
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import CategoryAssetsPage from './CategoryAssetsPage.js';
 import { 
   MdWeb, 
@@ -77,7 +77,7 @@ const iconsList = [
   { icon: <MdInventory size={24} />, name: 'Package', value: 'package' }
 ];
 
-export default function CategoriesPanel() {
+export default function CategoriePanel({ searchQuery = '' }) {
   const [categories, setCategories] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -86,6 +86,11 @@ export default function CategoriesPanel() {
   const [submitting, setSubmitting] = useState(false);
   const [selectedCategory, setSelectedCategory] = useState(null);
   const [showCategoryAssets, setShowCategoryAssets] = useState(false);
+  
+  // États pour les filtres (sans recherche locale)
+  const [filterColor, setFilterColor] = useState('all');
+  const [filterSort, setFilterSort] = useState('name');
+  
   const [formData, setFormData] = useState({
     name: '',
     display_name: '',
@@ -120,11 +125,12 @@ export default function CategoriesPanel() {
           display_name: cat.display_name || cat.name,
           bg: cat.bg || colorInfo.bg,
           assetCount: cat.asset_count || 0,
-          createdAt: cat.created_at?.split('T')[0] || new Date().toISOString().split('T')[0]
+          createdAt: cat.created_at?.split('T')[0] || new Date().toISOString().split('T')[0],
+          createdDate: cat.created_at ? new Date(cat.created_at) : new Date()
         };
       });
       
-      // Trier par sort_order
+      // Trier par sort_order par défaut
       formattedCategories.sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0));
       
       setCategories(formattedCategories);
@@ -140,6 +146,43 @@ export default function CategoriesPanel() {
   useEffect(() => {
     fetchCategories();
   }, [fetchCategories]);
+
+  // Filtrer et trier les catégories
+  const filteredAndSortedCategories = useMemo(() => {
+    let result = [...categories];
+    
+    // Filtre par recherche (via la prop searchQuery de la top bar)
+    if (searchQuery) {
+      const term = searchQuery.toLowerCase();
+      result = result.filter(cat => 
+        cat.display_name.toLowerCase().includes(term) ||
+        cat.name.toLowerCase().includes(term) ||
+        (cat.description && cat.description.toLowerCase().includes(term))
+      );
+    }
+    
+    // Filtre par couleur
+    if (filterColor !== 'all') {
+      result = result.filter(cat => cat.color === filterColor);
+    }
+    
+    // Tri
+    switch(filterSort) {
+      case 'name':
+        result.sort((a, b) => a.display_name.localeCompare(b.display_name));
+        break;
+      case 'date':
+        result.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+        break;
+      case 'assets':
+        result.sort((a, b) => (b.assetCount || 0) - (a.assetCount || 0));
+        break;
+      default:
+        result.sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0));
+    }
+    
+    return result;
+  }, [categories, searchQuery, filterColor, filterSort]);
 
   // Ouvrir la page des assets d'une catégorie
   const handleViewCategoryAssets = (category) => {
@@ -232,10 +275,11 @@ export default function CategoriesPanel() {
         display_name: newCategory.display_name || newCategory.name,
         bg: selectedColor.bg,
         assetCount: 0,
-        createdAt: new Date().toISOString().split('T')[0]
+        createdAt: new Date().toISOString().split('T')[0],
+        createdDate: new Date()
       };
       
-      setCategories(prev => [...prev, formattedCategory].sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0)));
+      setCategories(prev => [...prev, formattedCategory]);
       closeModal();
       
       console.log('Catégorie créée avec succès:', newCategory);
@@ -295,7 +339,7 @@ export default function CategoriesPanel() {
           bg: selectedColor.bg,
           updatedAt: new Date().toISOString().split('T')[0]
         } : cat
-      ).sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0)));
+      ));
       closeModal();
       
       console.log('Catégorie modifiée avec succès:', updatedCategory);
@@ -363,6 +407,12 @@ export default function CategoriesPanel() {
     setShowModal(true);
   };
 
+  // Réinitialiser les filtres
+  const resetFilters = () => {
+    setFilterColor('all');
+    setFilterSort('name');
+  };
+
   // Si on affiche les assets d'une catégorie
   if (showCategoryAssets && selectedCategory) {
     return (
@@ -374,7 +424,6 @@ export default function CategoriesPanel() {
     );
   }
 
-  // Le reste du rendu reste similaire mais avec display_name au lieu de name dans l'affichage
   if (loading && categories.length === 0) {
     return (
       <div style={{ display: 'flex', justifyContent: 'center', padding: '60px 20px' }}>
@@ -385,17 +434,89 @@ export default function CategoriesPanel() {
 
   return (
     <>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20, flexWrap: 'wrap', gap: 12 }}>
         <div>
           <span className="card-title" style={{ fontSize: 14 }}>Catégories d'assets</span>
           <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10, color: 'var(--dim)', marginLeft: 10 }}>
-            {categories.length} catégorie{categories.length > 1 ? 's' : ''}
+            {filteredAndSortedCategories.length} catégorie{filteredAndSortedCategories.length > 1 ? 's' : ''}
+            {categories.length !== filteredAndSortedCategories.length && ` (${categories.length} total)`}
+            {searchQuery && ` • Résultat de recherche`}
           </span>
         </div>
         <button className="btn btn-primary" onClick={openCreateModal} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
           <MdAdd size={16} />
           Nouvelle catégorie
         </button>
+      </div>
+
+      {/* Filtres (sans barre de recherche) */}
+      <div style={{ marginBottom: 16 }}>
+        <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'center' }}>
+          {/* Filtre par couleur */}
+          <select
+            value={filterColor}
+            onChange={(e) => setFilterColor(e.target.value)}
+            style={{
+              padding: '8px 12px',
+              background: 'rgba(255,255,255,.05)',
+              border: '1px solid rgba(255,255,255,.1)',
+              borderRadius: 8,
+              color: 'white',
+              fontSize: 13,
+              outline: 'none',
+              cursor: 'pointer'
+            }}
+          >
+            <option value="all">🎨 Toutes les couleurs</option>
+            {colorPalette.map(color => (
+              <option key={color.value} value={color.value}>
+                {color.name}
+              </option>
+            ))}
+          </select>
+          
+          {/* Filtre de tri */}
+          <select
+            value={filterSort}
+            onChange={(e) => setFilterSort(e.target.value)}
+            style={{
+              padding: '8px 12px',
+              background: 'rgba(255,255,255,.05)',
+              border: '1px solid rgba(255,255,255,.1)',
+              borderRadius: 8,
+              color: 'white',
+              fontSize: 13,
+              outline: 'none',
+              cursor: 'pointer'
+            }}
+          >
+            <option value="name">🔤 Trier par nom</option>
+            <option value="date">📅 Trier par date</option>
+            <option value="assets">📊 Trier par nombre d'assets</option>
+          </select>
+          
+          {/* Bouton réinitialiser */}
+          {(filterColor !== 'all' || filterSort !== 'name') && (
+            <button
+              onClick={resetFilters}
+              style={{
+                padding: '8px 12px',
+                background: 'rgba(255,255,255,.05)',
+                border: '1px solid rgba(255,255,255,.1)',
+                borderRadius: 8,
+                color: 'var(--dim)',
+                cursor: 'pointer',
+                fontSize: 12,
+                display: 'flex',
+                alignItems: 'center',
+                gap: 6
+              }}
+            >
+              <MdClose size={14} />
+              Réinitialiser
+            </button>
+          )}
+        </div>
       </div>
 
       {error && (
@@ -412,7 +533,7 @@ export default function CategoriesPanel() {
         </div>
       )}
 
-      {categories.length === 0 && !loading ? (
+      {filteredAndSortedCategories.length === 0 && !loading ? (
         <div style={{ 
           textAlign: 'center', 
           padding: '60px 20px',
@@ -420,13 +541,31 @@ export default function CategoriesPanel() {
           borderRadius: 12,
           border: '1px dashed rgba(255,255,255,.1)'
         }}>
-          <div style={{ fontSize: 48, marginBottom: 16 }}>📁</div>
-          <div style={{ fontSize: 14, color: 'var(--dim)', marginBottom: 8 }}>Aucune catégorie d'assets</div>
-          <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 16 }}>Créez votre première catégorie pour organiser vos assets</div>
-          <button className="btn btn-primary" onClick={openCreateModal} style={{ padding: '8px 16px', fontSize: 12, display: 'flex', alignItems: 'center', gap: 6 }}>
-            <MdAdd size={16} />
-            Créer une catégorie
-          </button>
+          <div style={{ fontSize: 48, marginBottom: 16 }}>🔍</div>
+          <div style={{ fontSize: 14, color: 'var(--dim)', marginBottom: 8 }}>
+            {searchQuery || filterColor !== 'all' ? 'Aucune catégorie ne correspond aux filtres' : 'Aucune catégorie d\'assets'}
+          </div>
+          <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 16 }}>
+            {searchQuery || filterColor !== 'all' 
+              ? 'Essayez de modifier vos filtres de recherche'
+              : 'Créez votre première catégorie pour organiser vos assets'
+            }
+          </div>
+          {(searchQuery || filterColor !== 'all') ? (
+            <button 
+              className="btn btn-primary" 
+              onClick={resetFilters}
+              style={{ padding: '8px 16px', fontSize: 12, display: 'flex', alignItems: 'center', gap: 6 }}
+            >
+              <MdClose size={16} />
+              Réinitialiser les filtres
+            </button>
+          ) : (
+            <button className="btn btn-primary" onClick={openCreateModal} style={{ padding: '8px 16px', fontSize: 12, display: 'flex', alignItems: 'center', gap: 6 }}>
+              <MdAdd size={16} />
+              Créer une catégorie
+            </button>
+          )}
         </div>
       ) : (
         <div className="categories-grid" style={{ 
@@ -434,7 +573,7 @@ export default function CategoriesPanel() {
           gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', 
           gap: 16 
         }}>
-          {categories.map((category) => (
+          {filteredAndSortedCategories.map((category) => (
             <div 
               key={category.id} 
               className="category-card"
@@ -599,41 +738,43 @@ export default function CategoriesPanel() {
             </div>
           ))}
 
-          {/* Carte "Nouvelle catégorie" */}
-          <div 
-            className="category-card new-category"
-            style={{ 
-              cursor: 'pointer', 
-              borderStyle: 'dashed', 
-              borderColor: 'rgba(255,255,255,.1)',
-              background: 'rgba(12,22,40,.6)',
-              display: 'flex', 
-              flexDirection: 'column', 
-              alignItems: 'center', 
-              justifyContent: 'center',
-              minHeight: 220,
-              transition: 'all 0.2s ease',
-              borderRadius: 12,
-              border: '1px dashed rgba(255,255,255,.2)'
-            }}
-            onClick={openCreateModal}
-          >
-            <div style={{
-              width: 50,
-              height: 50,
-              borderRadius: '50%',
-              background: 'rgba(255,255,255,.05)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              marginBottom: 12,
-              color: 'var(--dim)'
-            }}>
-              <MdAdd size={24} />
+          {/* Carte "Nouvelle catégorie" - seulement si aucun filtre n'est actif */}
+          {!searchQuery && filterColor === 'all' && (
+            <div 
+              className="category-card new-category"
+              style={{ 
+                cursor: 'pointer', 
+                borderStyle: 'dashed', 
+                borderColor: 'rgba(255,255,255,.1)',
+                background: 'rgba(12,22,40,.6)',
+                display: 'flex', 
+                flexDirection: 'column', 
+                alignItems: 'center', 
+                justifyContent: 'center',
+                minHeight: 220,
+                transition: 'all 0.2s ease',
+                borderRadius: 12,
+                border: '1px dashed rgba(255,255,255,.2)'
+              }}
+              onClick={openCreateModal}
+            >
+              <div style={{
+                width: 50,
+                height: 50,
+                borderRadius: '50%',
+                background: 'rgba(255,255,255,.05)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                marginBottom: 12,
+                color: 'var(--dim)'
+              }}>
+                <MdAdd size={24} />
+              </div>
+              <div style={{ fontSize: 13, color: 'var(--muted)', fontWeight: 500 }}>Nouvelle catégorie</div>
+              <div style={{ fontSize: 10, color: 'var(--dim)', marginTop: 4 }}>Organisez vos assets</div>
             </div>
-            <div style={{ fontSize: 13, color: 'var(--muted)', fontWeight: 500 }}>Nouvelle catégorie</div>
-            <div style={{ fontSize: 10, color: 'var(--dim)', marginTop: 4 }}>Organisez vos assets</div>
-          </div>
+          )}
         </div>
       )}
 
@@ -676,7 +817,7 @@ export default function CategoriesPanel() {
                     placeholder="ex: developpement_web (uniquement minuscules, chiffres et underscores)"
                     autoComplete="off"
                     autoFocus
-                    disabled={!!editingCategory} // Le nom technique ne devrait pas être modifiable
+                    disabled={!!editingCategory}
                     style={errors.name ? { borderColor: '#EF4444' } : {}}
                   />
                   {errors.name && (
@@ -884,6 +1025,11 @@ export default function CategoriesPanel() {
         .btn-primary:hover {
           background: rgba(59,130,246,.25);
           transform: translateY(-1px);
+        }
+        
+        select option {
+          background: #0a0f1a;
+          color: white;
         }
       `}</style>
     </>

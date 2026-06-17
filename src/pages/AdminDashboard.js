@@ -18,7 +18,7 @@ const AdminDashboard = () => {
   const [activePanel, setActivePanel] = useState("dashboard");
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
-  const [selectedProjectId, setSelectedProjectId] = useState(null); // ← Ajouté
+  const [selectedProjectId, setSelectedProjectId] = useState(null);
 
   const openModal = () => setIsModalOpen(true);
   const closeModal = () => setIsModalOpen(false);
@@ -28,6 +28,7 @@ const AdminDashboard = () => {
     console.log('🟣 Ouverture des assets du projet:', projectId);
     setSelectedProjectId(projectId);
     setActivePanel("project-assets");
+    setSearchQuery(""); // Réinitialiser la recherche
   };
 
   // Fonction pour revenir à la liste des projets
@@ -35,30 +36,39 @@ const AdminDashboard = () => {
     console.log('🟣 Retour à la liste des projets');
     setSelectedProjectId(null);
     setActivePanel("gestion");
+    setSearchQuery(""); // Réinitialiser la recherche
+  };
+
+  // Gérer la recherche globale
+  const handleSearch = (query) => {
+    setSearchQuery(query);
+    // Vous pouvez ajouter ici une logique pour la recherche globale
+    console.log(`🔍 Recherche: "${query}" dans le panel ${activePanel}`);
   };
 
   const renderPanel = () => {
+    // Passer searchQuery aux panels qui le supportent
     switch (activePanel) {
       case "dashboard":
-        return <DashboardPanel />;
+        return <DashboardPanel searchQuery={searchQuery} />;
       case "users":
         return <UsersPanel openModal={openModal} searchQuery={searchQuery} />;
       case "assets":
         return <AssetsPanel searchQuery={searchQuery} />;
       case "stats":
-        return <StatsPanel />;
+        return <StatsPanel searchQuery={searchQuery} />;
       case "roles":
-        return <RolesPanel />;
+        return <RolesPanel searchQuery={searchQuery} />;
       case "gestion":
-        return <ProjectsPanel onOpenProject={openProjectAssets} />; // ← Passez la prop
-      case "project-assets": // ← Nouveau panel
-        return <ProjectAssetsPage projectId={selectedProjectId} onBack={backToProjects} />;
+        return <ProjectsPanel onOpenProject={openProjectAssets} searchQuery={searchQuery} />;
+      case "project-assets":
+        return <ProjectAssetsPage projectId={selectedProjectId} onBack={backToProjects} searchQuery={searchQuery} />;
       case "categorie":
-        return <CategoriePanel />;
+        return <CategoriePanel searchQuery={searchQuery} />;
       case "settings":
-        return <SettingsPanel />;
+        return <SettingsPanel searchQuery={searchQuery} />;
       default:
-        return <DashboardPanel />;
+        return <DashboardPanel searchQuery={searchQuery} />;
     }
   };
 
@@ -67,9 +77,10 @@ const AdminDashboard = () => {
       <Sidebar activePanel={activePanel} setActivePanel={setActivePanel} />
       <div className="admin-main">
         <Topbar 
-          activePanel={activePanel} 
+          activePanel={activePanel}
           searchQuery={searchQuery}
           setSearchQuery={setSearchQuery}
+          onSearch={handleSearch}
         />
         <div className="admin-content">
           {renderPanel()}
