@@ -223,33 +223,7 @@ export default function CategoryAssetsPage({ categoryId, categoryData, onBack })
           userData = data.data;
         }
       } catch (err) {
-        console.log('Endpoint /users non disponible, essai /admin/users');
-        try {
-          // Endpoint 2: /admin/users (si admin)
-          const data = await apiRequest('/admin/users');
-          if (Array.isArray(data)) {
-            userData = data;
-          } else if (data.users && Array.isArray(data.users)) {
-            userData = data.users;
-          } else if (data.data && Array.isArray(data.data)) {
-            userData = data.data;
-          }
-        } catch (err2) {
-          console.log('Endpoint /admin/users non disponible, essai /auth/users');
-          try {
-            // Endpoint 3: /auth/users
-            const data = await apiRequest('/auth/users');
-            if (Array.isArray(data)) {
-              userData = data;
-            } else if (data.users && Array.isArray(data.users)) {
-              userData = data.users;
-            } else if (data.data && Array.isArray(data.data)) {
-              userData = data.data;
-            }
-          } catch (err3) {
-            console.warn('Aucun endpoint utilisateur trouvé, utilisation des données des assets');
-          }
-        }
+
       }
       
       // Formater les utilisateurs

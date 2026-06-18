@@ -702,37 +702,7 @@ export default function AssetsPanel({ searchQuery = '' }) {
                 <option value="team">👥 Team</option>
                 <option value="private">🔒 Privé</option>
               </select>
-            </div>
-
-            {/* Filtre par créateur */}
-            <div>
-              <label style={{ fontSize: 10, color: 'var(--dim)', display: 'block', marginBottom: 4 }}>
-                <LiaUserSolid size={12} style={{ marginRight: 4 }} />
-                Créateur
-              </label>
-              <select
-                value={filters.created_by}
-                onChange={(e) => handleFilterChange('created_by', e.target.value)}
-                style={{
-                  width: '100%',
-                  padding: '6px 10px',
-                  background: 'rgba(255,255,255,.05)',
-                  border: '1px solid rgba(255,255,255,.1)',
-                  borderRadius: 6,
-                  color: 'white',
-                  fontSize: 12
-                }}
-              >
-                <option value="">Tous</option>
-                {users.map(user => (
-                  <option key={user.id} value={user.id}>
-                    {user.first_name || user.name || user.email || `Utilisateur ${user.id}`}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-       
+            </div>      
           </div>
         )}
 
