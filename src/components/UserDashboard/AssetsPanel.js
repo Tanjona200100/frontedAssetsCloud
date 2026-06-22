@@ -8,6 +8,7 @@ import { FaRegFile } from "react-icons/fa6";
 import { RiDossierFill } from "react-icons/ri";
 import { MdSearch, MdClose, MdFilterList } from 'react-icons/md';
 import UploadService from '../../services/uploadService';
+import JSZip from 'jszip';
 
 const API_BASE_URL = process.env.REACT_APP_API_BASE_URL || process.env.REACT_APP_API_URL || 'http://192.168.2.160:5000/api';
 
@@ -36,11 +37,234 @@ const getUserData = () => {
   return {};
 };
 
+// Composant popup pour afficher le contenu du ZIP
+function ZipContentPopup({ files, onClose, onSelectFile }) {
+  // Grouper les fichiers par dossier
+  const groupedFiles = files.reduce((acc, file) => {
+    const parts = file.path.split('/');
+    const folder = parts.length > 1 ? parts.slice(0, -1).join('/') : 'Racine';
+    if (!acc[folder]) acc[folder] = [];
+    acc[folder].push(file);
+    return acc;
+  }, {});
+
+  const sortedFolders = Object.keys(groupedFiles).sort();
+
+  const getFileIcon = (filename) => {
+    const ext = filename.split('.').pop().toLowerCase();
+    const iconMap = {
+      'glb': '🎮', 'gltf': '🎮', 'obj': '🎮', 'fbx': '🎮',
+      'mtl': '📄', 'jpg': '🖼️', 'jpeg': '🖼️', 'png': '🖼️',
+      'webp': '🖼️', 'tga': '🖼️', 'bmp': '🖼️', 'tiff': '🖼️',
+      'dds': '🖼️', 'txt': '📝', 'json': '📋', 'xml': '📋'
+    };
+    return iconMap[ext] || '📄';
+  };
+
+  const getFileColor = (filename) => {
+    const ext = filename.split('.').pop().toLowerCase();
+    const modelExts = ['glb', 'gltf', 'obj', 'fbx'];
+    const textureExts = ['jpg', 'jpeg', 'png', 'webp', 'tga', 'bmp', 'tiff', 'dds'];
+    
+    if (modelExts.includes(ext)) return '#10b981';
+    if (textureExts.includes(ext)) return '#3B82F6';
+    if (ext === 'mtl') return '#8B5CF6';
+    return '#666';
+  };
+
+  const isModelFile = (filename) => {
+    const ext = filename.split('.').pop().toLowerCase();
+    return ['glb', 'gltf', 'obj', 'fbx'].includes(ext);
+  };
+
+  return (
+    <div style={{
+      position: 'fixed',
+      top: 0,
+      left: 0,
+      right: 0,
+      bottom: 0,
+      background: 'rgba(0,0,0,0.8)',
+      backdropFilter: 'blur(8px)',
+      zIndex: 3000,
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center'
+    }} onClick={onClose}>
+      <div style={{
+        background: '#0a0f1a',
+        borderRadius: 16,
+        border: '1px solid rgba(255,255,255,0.1)',
+        width: '90%',
+        maxWidth: 800,
+        maxHeight: '80vh',
+        display: 'flex',
+        flexDirection: 'column',
+        overflow: 'hidden'
+      }} onClick={(e) => e.stopPropagation()}>
+        <div style={{
+          padding: '16px 20px',
+          borderBottom: '1px solid rgba(255,255,255,0.1)',
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center'
+        }}>
+          <div>
+            <h3 style={{ margin: 0, color: '#fff', fontSize: 18 }}>
+              📦 Contenu du ZIP
+            </h3>
+            <p style={{ margin: '4px 0 0', fontSize: 12, color: 'rgba(255,255,255,0.6)' }}>
+              {files.length} fichier(s) trouvé(s)
+            </p>
+          </div>
+          <button onClick={onClose} style={{
+            background: 'rgba(255,255,255,0.1)',
+            border: 'none',
+            color: '#fff',
+            fontSize: 24,
+            cursor: 'pointer',
+            width: 40,
+            height: 40,
+            borderRadius: 8,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            transition: 'background 0.2s'
+          }}
+          onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(255,255,255,0.2)'}
+          onMouseLeave={(e) => e.currentTarget.style.background = 'rgba(255,255,255,0.1)'}>
+            ×
+          </button>
+        </div>
+
+        <div style={{
+          padding: '16px 20px',
+          overflowY: 'auto',
+          flex: 1
+        }}>
+          {sortedFolders.map((folder) => (
+            <div key={folder} style={{ marginBottom: 16 }}>
+              <div style={{
+                fontSize: 12,
+                color: '#3B82F6',
+                fontWeight: 600,
+                marginBottom: 8,
+                display: 'flex',
+                alignItems: 'center',
+                gap: 8
+              }}>
+                <span>📁</span>
+                <span>{folder}</span>
+                <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.4)' }}>
+                  ({groupedFiles[folder].length} fichier(s))
+                </span>
+              </div>
+              <div style={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(auto-fill, minmax(250px, 1fr))',
+                gap: 6
+              }}>
+                {groupedFiles[folder].map((file, index) => (
+                  <div
+                    key={index}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 10,
+                      padding: '8px 12px',
+                      background: 'rgba(255,255,255,0.05)',
+                      borderRadius: 6,
+                      cursor: isModelFile(file.filename) ? 'pointer' : 'default',
+                      transition: 'all 0.2s',
+                      border: '1px solid transparent'
+                    }}
+                    onClick={() => {
+                      if (isModelFile(file.filename)) {
+                        onSelectFile(file);
+                      }
+                    }}
+                    onMouseEnter={(e) => {
+                      if (isModelFile(file.filename)) {
+                        e.currentTarget.style.background = 'rgba(16,185,129,0.15)';
+                        e.currentTarget.style.borderColor = 'rgba(16,185,129,0.3)';
+                      }
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.background = 'rgba(255,255,255,0.05)';
+                      e.currentTarget.style.borderColor = 'transparent';
+                    }}
+                  >
+                    <span style={{ fontSize: 20 }}>{getFileIcon(file.filename)}</span>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{
+                        fontSize: 13,
+                        color: '#fff',
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                        whiteSpace: 'nowrap'
+                      }}>
+                        {file.filename}
+                      </div>
+                      <div style={{
+                        fontSize: 10,
+                        color: 'rgba(255,255,255,0.4)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 8
+                      }}>
+                        <span style={{ color: getFileColor(file.filename) }}>
+                          {file.extension.toUpperCase()}
+                        </span>
+                        <span>•</span>
+                        <span>{(file.size / 1024).toFixed(1)} KB</span>
+                        {isModelFile(file.filename) && (
+                          <span style={{ color: '#10b981', fontSize: 9 }}>
+                            🎯 Cliquer pour visualiser
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+
+        <div style={{
+          padding: '12px 20px',
+          borderTop: '1px solid rgba(255,255,255,0.05)',
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center'
+        }}>
+          <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)' }}>
+            💡 Cliquez sur un fichier modèle (.glb, .gltf, .obj, .fbx) pour le visualiser
+          </span>
+          <button onClick={onClose} style={{
+            padding: '6px 16px',
+            background: 'rgba(255,255,255,0.1)',
+            border: 'none',
+            borderRadius: 6,
+            color: '#fff',
+            cursor: 'pointer',
+            fontSize: 12,
+            transition: 'background 0.2s'
+          }}
+          onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(255,255,255,0.2)'}
+          onMouseLeave={(e) => e.currentTarget.style.background = 'rgba(255,255,255,0.1)'}>
+            Fermer
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function AssetsPanel({ searchQuery = '' }) {
   const { role, openPreview } = useContext(UserContext);
   const isGfx = role === 'gfx';
 
-  // Récupérer les données utilisateur
   const userData = getUserData();
   const isAdmin = userData?.role === 'admin' || userData?.is_admin === true;
   const currentUserId = userData?.id || userData?.user_id || getUserIdFromToken();
@@ -52,7 +276,6 @@ export default function AssetsPanel({ searchQuery = '' }) {
   const [totalPages, setTotalPages] = useState(1);
   const [totalAssets, setTotalAssets] = useState(0);
 
-  // États pour les filtres avancés
   const [filters, setFilters] = useState({
     search: searchQuery,
     visibility: '',
@@ -85,12 +308,16 @@ export default function AssetsPanel({ searchQuery = '' }) {
   const [hoveredAssetId, setHoveredAssetId] = useState(null);
   const [projects, setProjects] = useState([]);
   const [categories, setCategories] = useState([]);
-  const [users, setUsers] = useState([]);
   const [selectedProject, setSelectedProject] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('');
   const [loadingProjects, setLoadingProjects] = useState(false);
   const [loadingCategories, setLoadingCategories] = useState(false);
-  const [loadingUsers, setLoadingUsers] = useState(false);
+
+  // États pour la popup ZIP
+  const [showZipPopup, setShowZipPopup] = useState(false);
+  const [zipFiles, setZipFiles] = useState([]);
+  const [currentAssetId, setCurrentAssetId] = useState(null);
+  const [currentAssetName, setCurrentAssetName] = useState('');
 
   // Synchroniser avec la recherche de la topbar
   useEffect(() => {
@@ -100,7 +327,6 @@ export default function AssetsPanel({ searchQuery = '' }) {
     }
   }, [searchQuery]);
 
-  // Vérifier si l'utilisateur peut supprimer l'asset (admin ou propriétaire)
   const canDeleteAsset = (asset) => {
     if (isAdmin) return true;
     if (asset.created_by === currentUserId) return true;
@@ -119,6 +345,17 @@ export default function AssetsPanel({ searchQuery = '' }) {
       supported3DFormats.some(format => name?.endsWith(`.${format}`));
   };
 
+  const isZipFile = (asset) => {
+    const ext = asset.ext?.toLowerCase().replace(/^\./, '');
+    const fileType = asset.file_type?.toLowerCase();
+    const name = asset.name?.toLowerCase();
+    
+    return ext === 'zip' || 
+           fileType === 'zip' || 
+           fileType === 'archive' ||
+           name?.endsWith('.zip');
+  };
+
   const fetchAssets = useCallback(async () => {
     setLoading(true);
     setError(null);
@@ -128,7 +365,6 @@ export default function AssetsPanel({ searchQuery = '' }) {
       params.append('page', page);
       params.append('limit', 20);
       
-      // Ajouter tous les filtres
       if (filters.search) params.append('search', filters.search);
       if (filters.visibility) params.append('visibility', filters.visibility);
       if (filters.file_type) params.append('file_type', filters.file_type);
@@ -198,72 +434,85 @@ export default function AssetsPanel({ searchQuery = '' }) {
     }
   }, []);
 
-  const fetchUsers = useCallback(async () => {
-    setLoadingUsers(true);
+  // Fonction pour analyser le contenu du ZIP
+  const analyzeZipContent = async (assetId, token) => {
     try {
-      // Essayer plusieurs endpoints
-      let usersData = [];
-      try {
-        const response = await fetch(`${API_BASE_URL}/users`, {
-          headers: {
-            'Authorization': `Bearer ${localStorage.getItem('token')}`
-          }
+      const response = await fetch(`${API_BASE_URL}/assets/${assetId}/download`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+
+      const blob = await response.blob();
+      const zip = await JSZip.loadAsync(blob);
+      
+      const files = [];
+      zip.forEach((relativePath, file) => {
+        const pathParts = relativePath.split('/');
+        const filename = pathParts[pathParts.length - 1];
+        const ext = filename.split('.').pop().toLowerCase();
+        const folder = pathParts.slice(0, -1).join('/');
+
+        files.push({
+          filename: filename,
+          path: relativePath,
+          folder: folder || 'Racine',
+          extension: ext,
+          size: file._data?.uncompressedSize || 0
         });
-        if (response.ok) {
-          const data = await response.json();
-          usersData = data.users || data.data || data;
-        }
-      } catch (e) {
-        console.log('Endpoint /users non disponible');
-      }
+      });
 
-      if (usersData.length === 0) {
-        try {
-          const response = await fetch(`${API_BASE_URL}/admin/users`, {
-            headers: {
-              'Authorization': `Bearer ${localStorage.getItem('token')}`
-            }
-          });
-          if (response.ok) {
-            const data = await response.json();
-            usersData = data.users || data.data || data;
-          }
-        } catch (e) {
-          console.log('Endpoint /admin/users non disponible');
-        }
-      }
-
-      if (usersData.length === 0) {
-        // Fallback: extraire des assets
-        const response = await fetch(`${API_BASE_URL}/assets?limit=100`, {
-          headers: {
-            'Authorization': `Bearer ${localStorage.getItem('token')}`
-          }
-        });
-        if (response.ok) {
-          const data = await response.json();
-          const assetsData = data.data || data.assets || [];
-          const userMap = new Map();
-          assetsData.forEach(asset => {
-            const userId = asset.created_by || asset.uploaded_by || asset.user_id;
-            if (userId && !userMap.has(userId)) {
-              userMap.set(userId, {
-                id: userId,
-                name: asset.created_by_name || asset.uploaded_by_name || `Utilisateur ${userId}`
-              });
-            }
-          });
-          usersData = Array.from(userMap.values());
-        }
-      }
-
-      setUsers(usersData);
-    } catch (err) {
-      console.error('Erreur fetchUsers:', err);
-    } finally {
-      setLoadingUsers(false);
+      return files;
+    } catch (error) {
+      console.error('Erreur analyse ZIP:', error);
+      throw error;
     }
-  }, []);
+  };
+
+  // Fonction pour ouvrir la popup ZIP
+  const openZipPopup = async (asset) => {
+    const token = localStorage.getItem('token');
+    if (!token) { 
+      setError('Connectez-vous'); 
+      return; 
+    }
+
+    try {
+      const files = await analyzeZipContent(asset.id, token);
+      setZipFiles(files);
+      setCurrentAssetId(asset.id);
+      setCurrentAssetName(asset.title || asset.name);
+      setShowZipPopup(true);
+    } catch (err) {
+      setError(`Erreur lors de l'analyse du ZIP: ${err.message}`);
+    }
+  };
+
+  const handleSelectZipFile = (file) => {
+    // Fermer la popup et ouvrir le ModelViewer avec le fichier sélectionné
+    setShowZipPopup(false);
+    
+    const token = localStorage.getItem('token');
+    if (!token) { 
+      setError('Connectez-vous'); 
+      return; 
+    }
+
+    // Trouver l'asset correspondant
+    const asset = assets.find(a => a.id === currentAssetId);
+    if (!asset) return;
+
+    // Passer le fichier sélectionné au ModelViewer via un paramètre
+    setSelectedModel({ 
+      id: currentAssetId, 
+      name: file.filename,
+      token, 
+      ext: 'zip',
+      asset: asset,
+      selectedZipFile: file // Ajouter le fichier sélectionné
+    });
+    setShowModelViewer(true);
+  };
 
   const handleMultipleUpload = async (event) => {
     event.preventDefault();
@@ -404,6 +653,12 @@ export default function AssetsPanel({ searchQuery = '' }) {
   };
 
   const openAssetPreview = (asset) => {
+    // Si c'est un ZIP, ouvrir la popup
+    if (isZipFile(asset)) {
+      openZipPopup(asset);
+      return;
+    }
+
     if (is3DModel(asset)) {
       const token = localStorage.getItem('token');
       if (!token) { setError('Connectez-vous'); return; }
@@ -466,7 +721,6 @@ export default function AssetsPanel({ searchQuery = '' }) {
     }
   };
 
-  // Réinitialiser tous les filtres
   const resetFilters = () => {
     setFilters({
       search: '',
@@ -481,7 +735,6 @@ export default function AssetsPanel({ searchQuery = '' }) {
     setPage(1);
   };
 
-  // Compter le nombre de filtres actifs
   const activeFiltersCount = useMemo(() => {
     let count = 0;
     if (filters.search) count++;
@@ -498,8 +751,8 @@ export default function AssetsPanel({ searchQuery = '' }) {
     fetchAssets();
     fetchProjects();
     fetchCategories();
-    fetchUsers();
-  }, [fetchAssets, fetchProjects, fetchCategories, fetchUsers]);
+    // fetchUsers() - SUPPRIMÉ car les endpoints n'existent pas
+  }, [fetchAssets, fetchProjects, fetchCategories]);
 
   if (loading && assets.length === 0) {
     return (
@@ -597,9 +850,6 @@ export default function AssetsPanel({ searchQuery = '' }) {
             gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))',
             gap: '12px'
           }}>
-           
-
-            {/* Filtre par catégorie */}
             <div>
               <label style={{ fontSize: 10, color: 'var(--dim)', display: 'block', marginBottom: 4 }}>
                 <LiaTagSolid size={12} style={{ marginRight: 4 }} />
@@ -627,7 +877,6 @@ export default function AssetsPanel({ searchQuery = '' }) {
               </select>
             </div>
 
-            {/* Filtre par projet */}
             <div>
               <label style={{ fontSize: 10, color: 'var(--dim)', display: 'block', marginBottom: 4 }}>
                 <LiaFolderOpen size={12} style={{ marginRight: 4 }} />
@@ -655,7 +904,6 @@ export default function AssetsPanel({ searchQuery = '' }) {
               </select>
             </div>
 
-            {/* Filtre par type */}
             <div>
               <label style={{ fontSize: 10, color: 'var(--dim)', display: 'block', marginBottom: 4 }}>Type</label>
               <select
@@ -682,7 +930,6 @@ export default function AssetsPanel({ searchQuery = '' }) {
               </select>
             </div>
 
-            {/* Filtre par visibilité */}
             <div>
               <label style={{ fontSize: 10, color: 'var(--dim)', display: 'block', marginBottom: 4 }}>Visibilité</label>
               <select
@@ -703,37 +950,7 @@ export default function AssetsPanel({ searchQuery = '' }) {
                 <option value="team">👥 Team</option>
                 <option value="private">🔒 Privé</option>
               </select>
-            </div>
-
-            {/* Filtre par créateur */}
-            <div>
-              <label style={{ fontSize: 10, color: 'var(--dim)', display: 'block', marginBottom: 4 }}>
-                <LiaUserSolid size={12} style={{ marginRight: 4 }} />
-                Créateur
-              </label>
-              <select
-                value={filters.created_by}
-                onChange={(e) => handleFilterChange('created_by', e.target.value)}
-                style={{
-                  width: '100%',
-                  padding: '6px 10px',
-                  background: 'rgba(255,255,255,.05)',
-                  border: '1px solid rgba(255,255,255,.1)',
-                  borderRadius: 6,
-                  color: 'white',
-                  fontSize: 12
-                }}
-              >
-                <option value="">Tous</option>
-                {users.map(user => (
-                  <option key={user.id} value={user.id}>
-                    {user.first_name || user.name || user.email || `Utilisateur ${user.id}`}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-       
+            </div>      
           </div>
         )}
 
@@ -752,6 +969,7 @@ export default function AssetsPanel({ searchQuery = '' }) {
         }}>
           {assets.map((asset) => {
             const is3D = is3DModel(asset);
+            const isZIP = isZipFile(asset);
             const isHovered = hoveredAssetId === asset.id;
             const canDelete = canDeleteAsset(asset);
 
@@ -783,7 +1001,30 @@ export default function AssetsPanel({ searchQuery = '' }) {
                     overflow: 'hidden'
                   }}
                 >
-                  {is3D ? (
+                  {isZIP ? (
+                    <div style={{ textAlign: 'center' }}>
+                      <div style={{ fontSize: 64, marginBottom: 8 }}>📦</div>
+                      <div style={{ fontSize: 12, color: '#f59e0b' }}>Archive ZIP</div>
+                      <div style={{ fontSize: 10, color: '#666' }}>Contient un modèle 3D</div>
+                      {isHovered && (
+                        <div style={{
+                          position: 'absolute',
+                          bottom: 16,
+                          left: '50%',
+                          transform: 'translateX(-50%)',
+                          background: 'rgba(0,0,0,.8)',
+                          padding: '6px 14px',
+                          borderRadius: 20,
+                          fontSize: 12,
+                          color: '#10b981',
+                          whiteSpace: 'nowrap',
+                          zIndex: 2
+                        }}>
+                          📂 Explorer le contenu
+                        </div>
+                      )}
+                    </div>
+                  ) : is3D ? (
                     asset.capture_url ? (
                       <>
                         <img
@@ -882,7 +1123,11 @@ export default function AssetsPanel({ searchQuery = '' }) {
                       {asset.description}
                     </div>
                   )}
-                  {is3D && (
+                  {isZIP ? (
+                    <div style={{ fontSize: 10, color: '#f59e0b', marginBottom: 10 }}>
+                      📦 Archive ZIP (Modèle 3D)
+                    </div>
+                  ) : is3D && (
                     <div style={{ fontSize: 10, color: '#10b981', marginBottom: 10 }}>
                       <PiCubeLight /> Modèle 3D
                     </div>
@@ -929,6 +1174,17 @@ export default function AssetsPanel({ searchQuery = '' }) {
                         {asset.created_by_name}
                       </span>
                     )}
+                    {isZIP && (
+                      <span style={{
+                        fontSize: 9,
+                        background: 'rgba(245,158,11,.15)',
+                        color: '#f59e0b',
+                        padding: '2px 8px',
+                        borderRadius: 10
+                      }}>
+                        📦 ZIP
+                      </span>
+                    )}
                     <span style={{
                       fontSize: 9,
                       background: asset.visibility === 'public' ? 'rgba(16,185,129,.15)' : 'rgba(239,68,68,.15)',
@@ -970,7 +1226,7 @@ export default function AssetsPanel({ searchQuery = '' }) {
                       onMouseLeave={(e) => e.currentTarget.style.background = 'rgba(59,130,246,.15)'}
                     >
                       <LiaEyeSolid size={14} />
-                      Preview
+                      {isZIP ? '📂 Explorer' : 'Preview'}
                     </button>
                     <button
                       onClick={() => handleDownload(asset.id, asset.name)}
@@ -996,7 +1252,6 @@ export default function AssetsPanel({ searchQuery = '' }) {
                       <LiaDownloadSolid size={14} />
                     </button>
                     
-                    {/* Bouton Supprimer - uniquement si admin ou propriétaire */}
                     {canDelete && (
                       <button
                         onClick={() => {
@@ -1080,7 +1335,15 @@ export default function AssetsPanel({ searchQuery = '' }) {
         )}
       </div>
 
-      {/* Le reste du code (modaux) reste identique... */}
+      {/* Popup ZIP */}
+      {showZipPopup && (
+        <ZipContentPopup 
+          files={zipFiles} 
+          onClose={() => setShowZipPopup(false)}
+          onSelectFile={handleSelectZipFile}
+        />
+      )}
+
       {/* Modal d'upload multiple */}
       {showUploadModal && (
         <div className="modal-overlay" onClick={() => { setShowUploadModal(false); resetUploadForm(); }}>
@@ -1314,11 +1577,13 @@ export default function AssetsPanel({ searchQuery = '' }) {
       {/* Vue 3D */}
       {showModelViewer && selectedModel && (
         <ModelViewer
+          key={selectedModel.id + (selectedModel.selectedZipFile?.filename || '')}
           assetId={selectedModel.id}
           assetName={selectedModel.name}
           token={localStorage.getItem('token')}
           assetExt={selectedModel.ext}
           assetData={selectedModel.asset}
+          selectedZipFile={selectedModel.selectedZipFile}
           onClose={() => {
             setShowModelViewer(false);
             setSelectedModel(null);
@@ -1698,6 +1963,76 @@ export default function AssetsPanel({ searchQuery = '' }) {
           animation: spin 1s linear infinite;
           width: 16px;
           height: 16px;
+        }
+        
+        .modal-container {
+          background: #0a0f1a;
+          border: 1px solid rgba(255,255,255,.1);
+          border-radius: 16px;
+          width: 90%;
+          max-width: 450px;
+          overflow: hidden;
+        }
+
+        .modal-header {
+          padding: 16px 20px;
+          border-bottom: 1px solid rgba(255,255,255,.1);
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+        }
+
+        .modal-header h3 {
+          margin: 0;
+          font-size: 16px;
+        }
+
+        .modal-close {
+          background: none;
+          border: none;
+          font-size: 24px;
+          cursor: pointer;
+          color: var(--text-muted);
+          padding: 4px;
+        }
+
+        .modal-body {
+          padding: 20px;
+        }
+
+        .modal-footer {
+          padding: 16px 20px;
+          border-top: 1px solid rgba(255,255,255,.1);
+          display: flex;
+          justify-content: flex-end;
+          gap: 12px;
+        }
+
+        .modal-btn {
+          padding: 8px 20px;
+          border-radius: 8px;
+          cursor: pointer;
+          font-size: 13px;
+          border: none;
+          transition: all 0.2s;
+        }
+
+        .modal-btn-cancel {
+          background: rgba(255,255,255,.05);
+          color: var(--text);
+        }
+
+        .modal-btn-cancel:hover {
+          background: rgba(255,255,255,.1);
+        }
+
+        .modal-btn-delete {
+          background: #ef4444;
+          color: white;
+        }
+
+        .modal-btn-delete:hover {
+          background: #dc2626;
         }
         
         @media (max-width: 768px) {
