@@ -5,7 +5,7 @@ import { MdOutlineModeEditOutline } from "react-icons/md";
 import { MdOutlineDeleteForever } from "react-icons/md";
 import { MdOutlineVisibility } from "react-icons/md";
 
-const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://192.168.2.160:5000/api';
+const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://192.168.2.160:73/api';
 
 // Fonction helper pour les requêtes API
 const apiRequest = async (endpoint, options = {}) => {

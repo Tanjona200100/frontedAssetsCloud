@@ -15,7 +15,7 @@ import { Icons } from './UserDashboard/icons';
 import { TbCategory } from "react-icons/tb";
 import { FaFolderOpen } from "react-icons/fa6";
 
-const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://192.168.2.160:5000/api';
+const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://192.168.2.73:5000/api';
 
 const apiRequest = async (endpoint, options = {}) => {
   const token = localStorage.getItem('token');

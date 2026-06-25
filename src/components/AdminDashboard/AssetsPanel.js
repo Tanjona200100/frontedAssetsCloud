@@ -7,7 +7,7 @@ import { RiDossierFill } from "react-icons/ri";
 import { MdFilterList, MdClose } from 'react-icons/md';
 import PreviewModal from './PreviewModal';
 
-const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://192.168.2.160:5000/api';
+const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://192.168.2.73:5000/api';
 
 const apiRequest = async (endpoint, options = {}) => {
   const token = localStorage.getItem('token');
