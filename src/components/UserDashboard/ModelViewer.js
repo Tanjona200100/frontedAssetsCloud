@@ -513,12 +513,7 @@ const BabylonModelLoader = forwardRef(function BabylonModelLoader(
 
         const shadowGenerator = new ShadowGenerator(1024, dirLight);
 
-        // Grille
-        const grid = MeshBuilder.CreateGround("grid", { width: 10, height: 10, subdivisions: 20 }, scene);
-        const gridMat = new StandardMaterial("gridMat", scene);
-        gridMat.alpha = 0.3;
-        grid.material = gridMat;
-        grid.position.y = -1.5;
+ 
 
         setIsReady(true);
 

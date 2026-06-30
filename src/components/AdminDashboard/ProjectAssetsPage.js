@@ -7,7 +7,7 @@ import { PiCubeLight } from "react-icons/pi";
 import { FaRegFile } from "react-icons/fa6";
 import { RiDossierFill } from "react-icons/ri";
 
-const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://192.168.2.73:5000/api';
+const API_BASE_URL = process.env.REACT_APP_API_URL ;
 
 // Fonction helper pour les requêtes API
 const apiRequest = async (endpoint, options = {}) => {

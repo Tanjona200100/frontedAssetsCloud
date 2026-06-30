@@ -6,8 +6,10 @@ import { FaRegFile } from "react-icons/fa6";
 import { RiDossierFill } from "react-icons/ri";
 import { MdFilterList, MdClose } from 'react-icons/md';
 import PreviewModal from './PreviewModal';
+// Import du ModelViewer Babylon
+import ModelViewer from '../../components/UserDashboard/ModelViewer';
 
-const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://192.168.2.73:5000/api';
+const API_BASE_URL = process.env.REACT_APP_API_URL;
 
 const apiRequest = async (endpoint, options = {}) => {
   const token = localStorage.getItem('token');
@@ -76,6 +78,11 @@ const AssetsPanel = ({ searchQuery = '' }) => {
   const [users, setUsers] = useState([]);
   const [showPreviewModal, setShowPreviewModal] = useState(false);
   const [previewAsset, setPreviewAsset] = useState(null);
+  
+  // États pour le ModelViewer 3D
+  const [showModelViewer, setShowModelViewer] = useState(false);
+  const [selectedModel, setSelectedModel] = useState(null);
+  
   const isMounted = useRef(true);
 
   // États pour les filtres avancés
@@ -96,6 +103,7 @@ const AssetsPanel = ({ searchQuery = '' }) => {
       delete window.downloadAsset;
     };
   }, [assets]);
+  
   // Synchroniser avec la recherche de la topbar
   useEffect(() => {
     if (searchQuery !== filters.search) {
@@ -104,42 +112,66 @@ const AssetsPanel = ({ searchQuery = '' }) => {
     }
   }, [searchQuery]);
 
-  // Récupérer les assets
-  const fetchAssets = useCallback(async (pageNum = page) => {
-    try {
-      setLoading(true);
-      const token = localStorage.getItem('token');
-      if (!token) {
-        throw new Error('Non authentifié');
-      }
-
-      // Construire l'URL avec les filtres
-      let url = `/assets?page=${pageNum}&limit=20`;
-
-      if (filters.search) url += `&search=${encodeURIComponent(filters.search)}`;
-      if (filters.visibility) url += `&visibility=${filters.visibility}`;
-      if (filters.file_type) url += `&file_type=${filters.file_type}`;
-      if (filters.category) url += `&category_id=${filters.category}`;
-      if (filters.project) url += `&project_id=${filters.project}`;
-      if (filters.created_by) url += `&created_by=${filters.created_by}`;
-      if (filters.date_from) url += `&date_from=${filters.date_from}`;
-      if (filters.date_to) url += `&date_to=${filters.date_to}`;
-
-      const data = await apiRequest(url);
-
-      setAssets(data.assets || data.data || []);
-      setTotalPages(data.pagination?.totalPages || data.totalPages || 1);
-      setTotalAssets(data.pagination?.total || data.total || 0);
-      setError(null);
-    } catch (err) {
-      console.error('Erreur chargement assets:', err);
-      if (isMounted.current) {
-        setError(err.message);
-      }
-    } finally {
-      setLoading(false);
+// Récupérer les assets
+const fetchAssets = useCallback(async (pageNum = page) => {
+  try {
+    setLoading(true);
+    const token = localStorage.getItem('token');
+    if (!token) {
+      throw new Error('Non authentifié');
     }
-  }, [filters, page]);
+
+    // Construire les query params communs (hors category/project, gérés à part)
+    const buildQueryParams = (extra = {}) => {
+      const params = new URLSearchParams();
+      params.set('page', pageNum);
+      params.set('limit', 20);
+
+      if (filters.search) params.set('search', filters.search);
+      if (filters.visibility) params.set('visibility', filters.visibility);
+      if (filters.file_type) params.set('file_type', filters.file_type);
+      if (filters.created_by) params.set('created_by', filters.created_by);
+      if (filters.date_from) params.set('date_from', filters.date_from);
+      if (filters.date_to) params.set('date_to', filters.date_to);
+
+      Object.entries(extra).forEach(([key, value]) => {
+        if (value) params.set(key, value);
+      });
+
+      return params.toString();
+    };
+
+    let url;
+    if (filters.category && filters.project) {
+      // Les deux filtres sont actifs : on utilise l'endpoint général
+      // car on ne peut pas combiner deux endpoints dédiés
+      url = `/assets?${buildQueryParams({ category_id: filters.category, project_id: filters.project })}`;
+    } else if (filters.category) {
+      // Endpoint dédié : assets d'une catégorie
+      url = `/categories/${filters.category}/assets?${buildQueryParams()}`;
+    } else if (filters.project) {
+      // Endpoint dédié : assets d'un projet
+      url = `/projects/${filters.project}/assets?${buildQueryParams()}`;
+    } else {
+      // Aucun filtre catégorie/projet : endpoint général
+      url = `/assets?${buildQueryParams()}`;
+    }
+
+    const data = await apiRequest(url);
+
+    setAssets(data.assets || data.data || []);
+    setTotalPages(data.pagination?.totalPages || data.totalPages || 1);
+    setTotalAssets(data.pagination?.total || data.total || 0);
+    setError(null);
+  } catch (err) {
+    console.error('Erreur chargement assets:', err);
+    if (isMounted.current) {
+      setError(err.message);
+    }
+  } finally {
+    setLoading(false);
+  }
+}, [filters, page]);
 
   // Récupérer les projets
   const fetchProjects = useCallback(async () => {
@@ -178,7 +210,7 @@ const AssetsPanel = ({ searchQuery = '' }) => {
     try {
       let usersData = [];
       try {
-        const response = await fetch(`${API_BASE_URL}/users`, {
+        const response = await fetch(`${API_BASE_URL}/users/admin/users`, {
           headers: {
             'Authorization': `Bearer ${localStorage.getItem('token')}`
           }
@@ -193,7 +225,7 @@ const AssetsPanel = ({ searchQuery = '' }) => {
 
       if (usersData.length === 0) {
         try {
-          const response = await fetch(`${API_BASE_URL}/admin/users`, {
+          const response = await fetch(`${API_BASE_URL}/users/admin/users`, {
             headers: {
               'Authorization': `Bearer ${localStorage.getItem('token')}`
             }
@@ -212,6 +244,41 @@ const AssetsPanel = ({ searchQuery = '' }) => {
       console.error('Erreur fetchUsers:', err);
     }
   }, []);
+
+  // === FONCTION POUR OUVRIR LE MODEL VIEWER 3D ===
+  const openModelViewer = (asset) => {
+    const token = localStorage.getItem('token');
+    if (!token) { 
+      alert('Connectez-vous pour visualiser ce modèle');
+      return; 
+    }
+
+    let cleanExt = (asset.ext || asset.file_ext || asset.extension || '')
+      .replace(/^\./, '')
+      .toLowerCase();
+
+    if (!cleanExt) {
+      const nameSource = asset.name || asset.title || '';
+      const dotIdx = nameSource.lastIndexOf('.');
+      if (dotIdx !== -1) cleanExt = nameSource.slice(dotIdx + 1).toLowerCase();
+    }
+
+    if (!cleanExt && asset.file_type === '3d_model') cleanExt = 'glb';
+
+    let fileName = asset.title || asset.name || 'model';
+    if (cleanExt && !fileName.toLowerCase().endsWith(`.${cleanExt}`)) {
+      fileName = `${fileName}.${cleanExt}`;
+    }
+
+    setSelectedModel({ 
+      id: asset.id, 
+      name: fileName, 
+      token, 
+      ext: cleanExt, 
+      asset 
+    });
+    setShowModelViewer(true);
+  };
 
   // Supprimer un asset
   const handleDelete = async () => {
@@ -267,13 +334,19 @@ const AssetsPanel = ({ searchQuery = '' }) => {
     }
   };
 
-  // Voir l'asset (prévisualisation)
+  // === FONCTION DE VISUALISATION MODIFIÉE ===
   const handleView = (asset) => {
-    setPreviewAsset(asset);
-    setShowPreviewModal(true);
+    // Vérifier si c'est un modèle 3D
+    if (is3DModel(asset)) {
+      openModelViewer(asset);
+    } else {
+      // Pour les autres types, utiliser le modal de prévisualisation
+      setPreviewAsset(asset);
+      setShowPreviewModal(true);
+    }
   };
 
-  // une fonction de téléchargement pour le modal
+  // Fonction de téléchargement pour le modal
   const handleDownloadFromModal = (assetId) => {
     const asset = assets.find(a => a.id === assetId);
     if (asset) {
@@ -431,9 +504,15 @@ const AssetsPanel = ({ searchQuery = '' }) => {
                   fontSize: 12
                 }}
               >
-                <option value="">Toutes</option>
+                <option style={{
+                  background: 'rgba(0,0,0)', 
+                  color: 'white',
+                }} value="">Toutes</option>
                 {categories.map(cat => (
-                  <option key={cat.id} value={cat.id}>
+                  <option style={{
+                  background: 'rgba(0,0,0)', 
+                  color: 'white',
+                }} key={cat.id} value={cat.id}>
                     {cat.icon || '📁'} {cat.display_name || cat.name}
                   </option>
                 ))}
@@ -459,9 +538,15 @@ const AssetsPanel = ({ searchQuery = '' }) => {
                   fontSize: 12
                 }}
               >
-                <option value="">Tous</option>
+                <option style={{
+                  background: 'rgba(0,0,0)', 
+                  color: 'white',
+                }} value="">Tous</option>
                 {projects.map(project => (
-                  <option key={project.id} value={project.id}>
+                  <option style={{
+                  background: 'rgba(0,0,0)', 
+                  color: 'white',
+                }} key={project.id} value={project.id}>
                     {project.name}
                   </option>
                 ))}
@@ -484,14 +569,38 @@ const AssetsPanel = ({ searchQuery = '' }) => {
                   fontSize: 12
                 }}
               >
-                <option value="">Tous</option>
-                <option value="image">🖼️ Images</option>
-                <option value="video">🎬 Vidéos</option>
-                <option value="3d_model">🎮 Modèles 3D</option>
-                <option value="archive">📦 Archives</option>
-                <option value="document">📄 Documents</option>
-                <option value="audio">🎵 Audio</option>
-                <option value="other">📎 Autres</option>
+                <option style={{
+                  background: 'rgba(0,0,0)', 
+                  color: 'white',
+                }} value="">Tous</option>
+                <option style={{
+                  background: 'rgba(0,0,0)', 
+                  color: 'white',
+                }} value="image">🖼️ Images</option>
+                <option style={{
+                  background: 'rgba(0,0,0)', 
+                  color: 'white',
+                }} value="video">🎬 Vidéos</option>
+                <option style={{
+                  background: 'rgba(0,0,0)', 
+                  color: 'white',
+                }} value="3d_model">🎮 Modèles 3D</option>
+                <option style={{
+                  background: 'rgba(0,0,0)', 
+                  color: 'white',
+                }} value="archive">📦 Archives</option>
+                <option style={{
+                  background: 'rgba(0,0,0)', 
+                  color: 'white',
+                }} value="document">📄 Documents</option>
+                <option style={{
+                  background: 'rgba(0,0,0)', 
+                  color: 'white',
+                }} value="audio">🎵 Audio</option>
+                <option style={{
+                  background: 'rgba(0,0,0)', 
+                  color: 'white',
+                }} value="other">📎 Autres</option>
               </select>
             </div>
 
@@ -511,10 +620,18 @@ const AssetsPanel = ({ searchQuery = '' }) => {
                   fontSize: 12
                 }}
               >
-                <option value="">Toutes</option>
-                <option value="public">🌍 Public</option>
-                <option value="team">👥 Team</option>
-                <option value="private">🔒 Privé</option>
+                <option style={{
+                  background: 'rgba(0,0,0)', 
+                  color: 'white',
+                }} value="">Toutes</option>
+                <option style={{
+                  background: 'rgba(0,0,0)', 
+                  color: 'white',
+                }} value="public">🌍 Public</option>
+                <option style={{
+                  background: 'rgba(0,0,0)', 
+                  color: 'white',
+                }} value="private">🔒 Privé</option>
               </select>
             </div>
 
@@ -537,9 +654,15 @@ const AssetsPanel = ({ searchQuery = '' }) => {
                   fontSize: 12
                 }}
               >
-                <option value="">Tous</option>
+                <option style={{
+                  background: 'rgba(0,0,0)', 
+                  color: 'white',
+                }} value="">Tous</option>
                 {users.map(user => (
-                  <option key={user.id} value={user.id}>
+                  <option style={{
+                  background: 'rgba(0,0,0)', 
+                  color: 'white',
+                }} key={user.id} value={user.id}>
                     {user.first_name || user.name || user.email || `Utilisateur ${user.id}`}
                   </option>
                 ))}
@@ -554,7 +677,7 @@ const AssetsPanel = ({ searchQuery = '' }) => {
           </div>
         )}
 
-        {/* Grille des assets - Même affichage que l'espace utilisateur */}
+        {/* Grille des assets */}
         <div style={{
           display: 'grid',
           gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))',
@@ -583,10 +706,7 @@ const AssetsPanel = ({ searchQuery = '' }) => {
               >
                 {/* Zone de preview cliquable */}
                 <div
-                  onClick={() => {
-                    setPreviewAsset(asset);
-                    setShowPreviewModal(true);
-                  }}
+                  onClick={() => handleView(asset)}
                   style={{
                     height: 200,
                     background: 'rgba(0,0,0,.4)',
@@ -765,17 +885,14 @@ const AssetsPanel = ({ searchQuery = '' }) => {
                     marginTop: 4
                   }}>
                     <button
-                      onClick={() => {
-                        setPreviewAsset(asset);
-                        setShowPreviewModal(true);
-                      }}
+                      onClick={() => handleView(asset)}
                       style={{
                         flex: 1,
-                        background: 'rgba(59,130,246,.15)',
+                        background: is3D ? 'rgba(16,185,129,.15)' : 'rgba(59,130,246,.15)',
                         border: 'none',
                         padding: '7px',
                         borderRadius: 6,
-                        color: '#3B82F6',
+                        color: is3D ? '#10b981' : '#3B82F6',
                         cursor: 'pointer',
                         fontSize: 12,
                         display: 'flex',
@@ -784,11 +901,11 @@ const AssetsPanel = ({ searchQuery = '' }) => {
                         gap: 6,
                         transition: 'background 0.2s'
                       }}
-                      onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(59,130,246,.25)'}
-                      onMouseLeave={(e) => e.currentTarget.style.background = 'rgba(59,130,246,.15)'}
+                      onMouseEnter={(e) => e.currentTarget.style.background = is3D ? 'rgba(16,185,129,.25)' : 'rgba(59,130,246,.25)'}
+                      onMouseLeave={(e) => e.currentTarget.style.background = is3D ? 'rgba(16,185,129,.15)' : 'rgba(59,130,246,.15)'}
                     >
                       <LiaEyeSolid size={14} />
-                      Preview
+                      {is3D ? '3D Viewer' : 'Preview'}
                     </button>
                     <button
                       onClick={() => handleDownload(asset)}
@@ -956,6 +1073,7 @@ const AssetsPanel = ({ searchQuery = '' }) => {
         )}
       </div>
 
+      {/* Preview Modal pour les fichiers non-3D */}
       {showPreviewModal && previewAsset && (
         <PreviewModal
           isOpen={showPreviewModal}
@@ -964,6 +1082,24 @@ const AssetsPanel = ({ searchQuery = '' }) => {
             setPreviewAsset(null);
           }}
           data={previewAsset}
+        />
+      )}
+
+      {/* ModelViewer 3D pour les modèles 3D */}
+      {showModelViewer && selectedModel && (
+        <ModelViewer
+          key={selectedModel.id + (selectedModel.selectedZipFile?.filename || '')}
+          assetId={selectedModel.id}
+          assetName={selectedModel.name}
+          token={localStorage.getItem('token')}
+          assetExt={selectedModel.ext}
+          assetData={selectedModel.asset}
+          selectedZipFile={selectedModel.selectedZipFile}
+          onClose={() => {
+            setShowModelViewer(false);
+            setSelectedModel(null);
+            setHoveredAssetId(null);
+          }}
         />
       )}
 
