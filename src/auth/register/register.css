@@ -205,3 +205,265 @@
   background: rgba(59, 130, 246, 0.1);
   transform: translateY(-2px);
 }
+
+
+/* register.css - Ajouts pour les popups et améliorations */
+
+/* Popup Styles */
+.popup-overlay {
+  position: fixed;
+  top: 20px;
+  right: 20px;
+  z-index: 9999;
+  animation: slideInRight 0.5s ease;
+  max-width: 400px;
+  width: 100%;
+}
+
+.popup-container {
+  background: rgba(15, 23, 42, 0.95);
+  backdrop-filter: blur(12px);
+  border-radius: 16px;
+  padding: 20px 24px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  box-shadow: 0 15px 40px rgba(0, 0, 0, 0.4);
+  position: relative;
+  overflow: hidden;
+  cursor: pointer;
+  transition: transform 0.3s ease;
+}
+
+.popup-container:hover {
+  transform: scale(1.02);
+}
+
+.popup-container.success {
+  border-left: 4px solid #10b981;
+}
+
+.popup-container.error {
+  border-left: 4px solid #ef4444;
+}
+
+.popup-container.info {
+  border-left: 4px solid #3b82f6;
+}
+
+.popup-close {
+  position: absolute;
+  top: 8px;
+  right: 12px;
+  background: none;
+  border: none;
+  color: #94a3b8;
+  font-size: 22px;
+  cursor: pointer;
+  transition: color 0.3s ease;
+  padding: 0 4px;
+}
+
+.popup-close:hover {
+  color: #ffffff;
+}
+
+.popup-icon {
+  font-size: 32px;
+  margin-bottom: 8px;
+  display: block;
+}
+
+.popup-title {
+  color: #ffffff;
+  font-size: 16px;
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+
+.popup-message {
+  color: #cbd5e1;
+  font-size: 14px;
+  margin: 0;
+  line-height: 1.5;
+}
+
+.popup-progress-bar {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  height: 3px;
+  width: 100%;
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.popup-progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #10b981, #3b82f6);
+  animation: progressBar 15s linear forwards;
+}
+
+.popup-container.error .popup-progress-fill {
+  background: linear-gradient(90deg, #ef4444, #dc2626);
+}
+
+.popup-container.success .popup-progress-fill {
+  background: linear-gradient(90deg, #10b981, #059669);
+}
+
+.popup-container.info .popup-progress-fill {
+  background: linear-gradient(90deg, #3b82f6, #2563eb);
+}
+
+/* Animations */
+@keyframes slideInRight {
+  from {
+    transform: translateX(100%);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+@keyframes progressBar {
+  0% {
+    width: 100%;
+  }
+  100% {
+    width: 0%;
+  }
+}
+
+/* Responsive Popup */
+@media (max-width: 768px) {
+  .popup-overlay {
+    top: 10px;
+    right: 10px;
+    left: 10px;
+    max-width: none;
+  }
+  
+  .popup-container {
+    padding: 16px 18px;
+  }
+  
+  .popup-title {
+    font-size: 15px;
+  }
+  
+  .popup-message {
+    font-size: 13px;
+  }
+}
+
+/* Animation d'erreur pour les champs */
+.input-group input.error {
+  border-color: #ef4444 !important;
+  box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.25) !important;
+}
+
+.input-group input.success {
+  border-color: #10b981 !important;
+  box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.25) !important;
+}
+
+.input-group.filled input {
+  border-color: #4a90e2;
+}
+
+/* Step indicator */
+.step-indicator {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 30px;
+  padding: 0 20px;
+}
+
+.step-dot {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.1);
+  color: #94a3b8;
+  font-size: 14px;
+  font-weight: 600;
+  transition: all 0.3s ease;
+}
+
+.step-dot.active {
+  background: linear-gradient(135deg, #4a90e2, #357abd);
+  color: white;
+  box-shadow: 0 0 20px rgba(74, 144, 226, 0.3);
+}
+
+.step-line {
+  flex: 1;
+  height: 2px;
+  background: rgba(255, 255, 255, 0.1);
+  margin: 0 8px;
+  transition: all 0.3s ease;
+}
+
+.step-line.active {
+  background: linear-gradient(90deg, #4a90e2, #357abd);
+}
+
+/* Step content animation */
+.step-content {
+  animation: fadeInUp 0.4s ease;
+}
+
+@keyframes fadeInUp {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Style pour les messages d'erreur en bas */
+.error-message {
+  background: rgba(239, 68, 68, 0.1);
+  border: 1px solid rgba(239, 68, 68, 0.2);
+  color: #ef4444;
+  padding: 10px 14px;
+  border-radius: 8px;
+  font-size: 14px;
+  margin-bottom: 16px;
+}
+
+.success-message {
+  background: rgba(16, 185, 129, 0.1);
+  border: 1px solid rgba(16, 185, 129, 0.2);
+  color: #10b981;
+  padding: 10px 14px;
+  border-radius: 8px;
+  font-size: 14px;
+  margin-bottom: 16px;
+}
+
+/* Animation de pulsation pour le bouton */
+@keyframes pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.7;
+  }
+}
+
+.register-btn-main:disabled {
+  animation: pulse 1.5s ease-in-out infinite;
+}
+
+.nav-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}

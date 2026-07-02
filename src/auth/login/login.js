@@ -1,16 +1,16 @@
 // auth/login/login.jsx
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../../contexts/AuthContext";
 import "./login.css";
 import logo from "../../assets/images/logo.png";
 
 // Configuration API
-const API_BASE_URL = process.env.REACT_APP_API_BASE_URL || process.env.REACT_APP_API_URL || 'http://192.168.2.160:5000/api';
+const API_BASE_URL = process.env.REACT_APP_API_BASE_URL || process.env.REACT_APP_API_URL || 'http://localhost:5000/api';
 
 const Login = () => {
   const navigate = useNavigate();
-  const { login, user } = useAuth();
+  const { login } = useAuth();
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   
@@ -21,10 +21,29 @@ const Login = () => {
   const [forgotSuccess, setForgotSuccess] = useState("");
   const [forgotLoading, setForgotLoading] = useState(false);
 
+  // États pour les popups
+  const [popup, setPopup] = useState({
+    show: false,
+    type: '', // 'success', 'error', 'info'
+    title: '',
+    message: '',
+    duration: 15000
+  });
+
   const [formData, setFormData] = useState({
     email: "",
     password: ""
   });
+
+  // Auto-fermeture du popup
+  useEffect(() => {
+    if (popup.show) {
+      const timer = setTimeout(() => {
+        setPopup(prev => ({ ...prev, show: false }));
+      }, popup.duration || 15000);
+      return () => clearTimeout(timer);
+    }
+  }, [popup.show, popup.duration]);
 
   const handleChange = (e) => {
     const { name, value } = e.target;
@@ -32,6 +51,17 @@ const Login = () => {
       ...prev,
       [name]: value
     }));
+  };
+
+  // Fonction pour afficher les popups
+  const showPopup = (type, title, message, duration = 15000) => {
+    setPopup({
+      show: true,
+      type,
+      title,
+      message,
+      duration
+    });
   };
 
   const handleSubmit = async (e) => {
@@ -42,6 +72,7 @@ const Login = () => {
     const result = await login(formData.email, formData.password);
     
     if (result.success) {
+      showPopup('success', 'Connexion réussie', 'Bienvenue sur AssetCloud !');
       setTimeout(() => {
         const role = result.user?.role?.toLowerCase();
         if (role === 'admin' || role === 'administrateur') {
@@ -51,13 +82,15 @@ const Login = () => {
         }
       }, 100);
     } else {
-      setError(result.error || "Email ou mot de passe incorrect");
+      const errorMsg = result.error || "Email ou mot de passe incorrect";
+      setError(errorMsg);
+      showPopup('error', 'Erreur de connexion', errorMsg);
     }
     
     setLoading(false);
   };
 
-  // Gestionnaire pour "Mot de passe oublié" - CORRECTION
+  // Gestionnaire pour "Mot de passe oublié"
   const handleForgotPassword = async (e) => {
     e.preventDefault();
     setForgotError("");
@@ -65,7 +98,6 @@ const Login = () => {
     setForgotLoading(true);
 
     try {
-      // Utiliser l'URL complète avec la variable d'environnement
       const url = `${API_BASE_URL}/auth/forgot-password`;
       console.log("Calling forgot password API:", url);
       
@@ -77,37 +109,49 @@ const Login = () => {
         body: JSON.stringify({ email: forgotEmail }),
       });
 
-      console.log("Response status:", response.status);
-
-      // Lire la réponse même en cas d'erreur
       const data = await response.json().catch(() => ({}));
-      console.log("Response data:", data);
 
       if (response.ok) {
-        setForgotSuccess(data.message || "Un email de réinitialisation a été envoyé. Vérifiez votre boîte de réception.");
+        const successMsg = data.message || "Un email de réinitialisation a été envoyé.";
+        setForgotSuccess(successMsg);
+        showPopup('success', 'Email envoyé !', successMsg);
+        
         setTimeout(() => {
           setShowForgotPassword(false);
           setForgotEmail("");
           setForgotSuccess("");
-        }, 3000);
+        }, 15000);
       } else {
-        // Gérer les différents codes d'erreur
+        let errorMsg = "Une erreur est survenue. Veuillez réessayer.";
+        
         if (response.status === 404) {
-          setForgotError("Service de réinitialisation non disponible. Veuillez contacter l'administrateur.");
+          errorMsg = "Service de réinitialisation non disponible. Veuillez contacter l'administrateur.";
         } else if (response.status === 400) {
-          setForgotError(data.error || "Email invalide. Veuillez vérifier votre saisie.");
+          errorMsg = data.error || "Email invalide. Veuillez vérifier votre saisie.";
         } else if (response.status === 404) {
-          setForgotError("Aucun compte trouvé avec cet email.");
-        } else {
-          setForgotError(data.error || "Une erreur est survenue. Veuillez réessayer.");
+          errorMsg = "Aucun compte trouvé avec cet email.";
+        } else if (response.status === 429) {
+          errorMsg = "Trop de tentatives. Veuillez attendre quelques minutes.";
+        } else if (response.status === 500) {
+          errorMsg = "Erreur serveur. Veuillez réessayer plus tard.";
         }
+        
+        setForgotError(errorMsg);
+        showPopup('error', 'Erreur', errorMsg);
       }
     } catch (error) {
       console.error("Forgot password error:", error);
-      setForgotError("Erreur de connexion au serveur. Veuillez réessayer plus tard.");
+      const errorMsg = "Erreur de connexion au serveur. Vérifiez votre connexion internet.";
+      setForgotError(errorMsg);
+      showPopup('error', 'Erreur de connexion', errorMsg);
     } finally {
       setForgotLoading(false);
     }
+  };
+
+  // Fermer le popup
+  const closePopup = () => {
+    setPopup(prev => ({ ...prev, show: false }));
   };
 
   return (
@@ -120,8 +164,6 @@ const Login = () => {
 
         <h2>Connexion</h2>
         <p className="subtitle">Accédez à votre espace AssetCloud</p>
-
-        {error && <div className="error-message">{error}</div>}
 
         <form onSubmit={handleSubmit}>
           <div className="input-group">
@@ -188,9 +230,6 @@ const Login = () => {
             <h3>Réinitialisation du mot de passe</h3>
             <p>Entrez votre email pour recevoir un lien de réinitialisation</p>
             
-            {forgotError && <div className="error-message">{forgotError}</div>}
-            {forgotSuccess && <div className="success-message">{forgotSuccess}</div>}
-            
             <form onSubmit={handleForgotPassword}>
               <div className="input-group">
                 <label>Email</label>
@@ -210,6 +249,25 @@ const Login = () => {
                 {forgotLoading ? "Envoi en cours..." : "Envoyer le lien"}
               </button>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Popup de notification */}
+      {popup.show && (
+        <div className={`popup-overlay ${popup.type}`} onClick={closePopup}>
+          <div className={`popup-container ${popup.type}`} onClick={(e) => e.stopPropagation()}>
+            <button className="popup-close" onClick={closePopup}>×</button>
+            <div className="popup-icon">
+              {popup.type === 'success' && '✅'}
+              {popup.type === 'error' && '❌'}
+              {popup.type === 'info' && 'ℹ️'}
+            </div>
+            <h4 className="popup-title">{popup.title}</h4>
+            <p className="popup-message">{popup.message}</p>
+            <div className="popup-progress-bar">
+              <div className="popup-progress-fill"></div>
+            </div>
           </div>
         </div>
       )}

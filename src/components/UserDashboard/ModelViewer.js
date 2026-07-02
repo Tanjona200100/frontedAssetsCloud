@@ -13,7 +13,7 @@ import {
 } from '@babylonjs/core';
 import JSZip from 'jszip';
 
-const API_BASE_URL = process.env.REACT_APP_API_BASE_URL;
+const API_BASE_URL = process.env.REACT_APP_API_URL;
 
 // ============ ENREGISTRER LES LOADERS BABYLON ============
 // IMPORTANT: Appeler registerBuiltInLoaders() avant tout chargement

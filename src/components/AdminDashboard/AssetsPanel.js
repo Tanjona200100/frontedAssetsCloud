@@ -4,10 +4,11 @@ import { LiaEyeSolid, LiaDownloadSolid, LiaTrashAltSolid, LiaLockSolid, LiaGlobe
 import { PiCubeLight } from "react-icons/pi";
 import { FaRegFile } from "react-icons/fa6";
 import { RiDossierFill } from "react-icons/ri";
-import { MdFilterList, MdClose } from 'react-icons/md';
+import { MdFilterList, MdClose, MdChevronLeft, MdChevronRight } from 'react-icons/md';
 import PreviewModal from './PreviewModal';
 // Import du ModelViewer Babylon
 import ModelViewer from '../../components/UserDashboard/ModelViewer';
+import JSZip from 'jszip';
 
 const API_BASE_URL = process.env.REACT_APP_API_URL;
 
@@ -49,22 +50,567 @@ const formatDate = (dateString) => {
   });
 };
 
+// ============ FONCTIONS DE DÉTECTION DES FORMATS ============
+const SUPPORTED_3D_FORMATS = [
+  'glb', 'gltf', 'fbx', 'obj', 'stl', 'dae', '3ds',
+  'blend', 'ply', '3mf', 'amf', 'bvh', 'c4d', 'dxf',
+  'iges', 'igs', 'jtl', 'jt', 'lwo', 'lws', 'lxo',
+  'modo', 'ms3d', 'ndo', 'nff', 'off', 'pov', 'prc',
+  'sldasm', 'sldprt', 'step', 'stp', 'usd', 'usda', 'usdc',
+  'usdz', 'vrml', 'wrl', 'x3d', 'x3db', 'x3dv',
+  'x_t', 'x_b', 'sat', 'sab', 'asm', 'neu', 'cgr'
+];
+
 const is3DModel = (asset) => {
   const ext = asset.ext?.toLowerCase().replace(/^\./, '');
   const fileType = asset.file_type?.toLowerCase();
   const name = asset.name?.toLowerCase();
-  const supported3DFormats = ['glb', 'gltf', 'fbx', 'obj', 'stl', 'dae', '3ds'];
-
-  return supported3DFormats.includes(ext) || fileType === '3d_model' ||
-    supported3DFormats.some(format => name?.endsWith(`.${format}`));
+  
+  return SUPPORTED_3D_FORMATS.includes(ext) || 
+         fileType === '3d_model' ||
+         fileType === '3d' ||
+         fileType === 'model' ||
+         SUPPORTED_3D_FORMATS.some(format => name?.endsWith(`.${format}`));
 };
 
-const AssetsPanel = ({ searchQuery = '' }) => {
+const isZipFile = (asset) => {
+  const ext = asset.ext?.toLowerCase().replace(/^\./, '');
+  const fileType = asset.file_type?.toLowerCase();
+  const name = asset.name?.toLowerCase();
+  
+  return ext === 'zip' || 
+         fileType === 'zip' || 
+         fileType === 'archive' ||
+         name?.endsWith('.zip') ||
+         name?.endsWith('.rar') ||
+         name?.endsWith('.7z');
+};
 
+const isTextureFile = (asset) => {
+  const ext = asset.ext?.toLowerCase().replace(/^\./, '');
+  const name = asset.name?.toLowerCase();
+  
+  const textureExtensions = [
+    'jpg', 'jpeg', 'png', 'webp', 'tga', 'bmp', 'tiff', 
+    'dds', 'exr', 'hdr', 'gif', 'psd', 'ai', 'svg',
+    'raw', 'r3d', 'arw', 'cr2', 'cr3', 'nef', 'pef'
+  ];
+  
+  return textureExtensions.includes(ext) || 
+         name?.includes('texture') || 
+         name?.includes('normal') || 
+         name?.includes('rough') ||
+         name?.includes('metal') ||
+         name?.includes('ao') ||
+         name?.includes('diffuse') ||
+         name?.includes('albedo');
+};
+
+const isMaterialFile = (asset) => {
+  const ext = asset.ext?.toLowerCase().replace(/^\./, '');
+  const name = asset.name?.toLowerCase();
+  const materialExtensions = ['mtl', 'mat'];
+  return materialExtensions.includes(ext) || 
+         name?.includes('material') || 
+         name?.includes('mtl');
+};
+
+const getFileCategory = (asset) => {
+  if (isZipFile(asset)) return 'archive';
+  if (is3DModel(asset)) return '3d_model';
+  if (isTextureFile(asset)) return 'texture';
+  if (isMaterialFile(asset)) return 'material';
+  return 'other';
+};
+
+const getFileIcon = (asset) => {
+  const category = getFileCategory(asset);
+  switch (category) {
+    case 'archive': return '📦';
+    case '3d_model': return '🎮';
+    case 'texture': return '🖼️';
+    case 'material': return '📄';
+    default: return '📄';
+  }
+};
+
+const getFileColor = (asset) => {
+  const category = getFileCategory(asset);
+  switch (category) {
+    case 'archive': return '#f59e0b';
+    case '3d_model': return '#10b981';
+    case 'texture': return '#3B82F6';
+    case 'material': return '#8B5CF6';
+    default: return '#666';
+  }
+};
+
+// ============ PAGINATION COMPOSANT ============
+function Pagination({ currentPage, totalPages, onPageChange, totalItems, itemsPerPage = 15, onLimitChange, isLoading = false }) {
+  // Calcul du nombre total de pages effectif
+  const effectiveTotalPages = totalPages > 0 ? totalPages : Math.ceil(totalItems / itemsPerPage);
+  
+  // Ne pas afficher la pagination si pas assez d'éléments
+  if (totalItems === 0 || (effectiveTotalPages === 1 && totalItems <= itemsPerPage)) {
+    return null;
+  }
+
+  const getVisiblePages = () => {
+    const delta = 2;
+    const range = [];
+    const rangeWithDots = [];
+    let l;
+
+    for (let i = 1; i <= effectiveTotalPages; i++) {
+      if (i === 1 || i === effectiveTotalPages || (i >= currentPage - delta && i <= currentPage + delta)) {
+        range.push(i);
+      }
+    }
+
+    range.forEach((i) => {
+      if (l) {
+        if (i - l === 2) {
+          rangeWithDots.push(l + 1);
+        } else if (i - l !== 1) {
+          rangeWithDots.push('...');
+        }
+      }
+      rangeWithDots.push(i);
+      l = i;
+    });
+
+    return rangeWithDots;
+  };
+
+  const startItem = totalItems > 0 ? (currentPage - 1) * itemsPerPage + 1 : 0;
+  const endItem = Math.min(currentPage * itemsPerPage, totalItems);
+
+  return (
+    <div style={{
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      padding: '12px 18px',
+      borderTop: '1px solid rgba(255,255,255,0.06)',
+      flexWrap: 'wrap',
+      gap: 12,
+      background: 'rgba(0,0,0,0.2)'
+    }}>
+      <div style={{
+        fontFamily: "'JetBrains Mono', monospace",
+        fontSize: 11,
+        color: 'var(--dim)',
+        display: 'flex',
+        alignItems: 'center',
+        gap: 8
+      }}>
+        {isLoading ? (
+          <>
+            <span className="spinner-small" style={{
+              display: 'inline-block',
+              width: 12,
+              height: 12,
+              border: '2px solid rgba(59,130,246,0.2)',
+              borderTop: '2px solid #3B82F6',
+              borderRadius: '50%',
+              animation: 'spin 0.8s linear infinite'
+            }} />
+            <span>Chargement...</span>
+          </>
+        ) : (
+          <span>{totalItems > 0 ? `${startItem}–${endItem} / ${totalItems}` : '0 fichier'}</span>
+        )}
+      </div>
+
+      <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
+        <button
+          onClick={() => onPageChange(currentPage - 1)}
+          disabled={currentPage === 1 || isLoading}
+          style={{
+            width: 32,
+            height: 32,
+            borderRadius: 6,
+            border: '1px solid rgba(255,255,255,0.06)',
+            background: currentPage === 1 || isLoading ? 'transparent' : 'rgba(255,255,255,0.05)',
+            color: currentPage === 1 || isLoading ? 'rgba(255,255,255,0.2)' : 'rgba(255,255,255,0.6)',
+            cursor: currentPage === 1 || isLoading ? 'not-allowed' : 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            transition: 'all 0.2s'
+          }}
+          onMouseEnter={(e) => {
+            if (currentPage !== 1 && !isLoading) {
+              e.currentTarget.style.background = 'rgba(59,130,246,0.15)';
+              e.currentTarget.style.borderColor = 'rgba(59,130,246,0.3)';
+            }
+          }}
+          onMouseLeave={(e) => {
+            if (currentPage !== 1 && !isLoading) {
+              e.currentTarget.style.background = 'rgba(255,255,255,0.05)';
+              e.currentTarget.style.borderColor = 'rgba(255,255,255,0.06)';
+            }
+          }}
+        >
+          <MdChevronLeft size={18} />
+        </button>
+
+        {getVisiblePages().map((page, index) => (
+          page === '...' ? (
+            <span key={`dots-${index}`} style={{
+              width: 32,
+              height: 32,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              color: 'rgba(255,255,255,0.3)',
+              fontSize: 12
+            }}>
+              …
+            </span>
+          ) : (
+            <button
+              key={page}
+              onClick={() => !isLoading && onPageChange(page)}
+              disabled={isLoading}
+              style={{
+                width: 32,
+                height: 32,
+                borderRadius: 6,
+                border: page === currentPage ? '1px solid rgba(59,130,246,0.4)' : '1px solid rgba(255,255,255,0.06)',
+                background: page === currentPage ? 'rgba(59,130,246,0.15)' : 'transparent',
+                color: page === currentPage ? '#3B82F6' : 'rgba(255,255,255,0.6)',
+                cursor: isLoading ? 'not-allowed' : 'pointer',
+                fontSize: 12,
+                fontWeight: page === currentPage ? 600 : 400,
+                transition: 'all 0.2s'
+              }}
+              onMouseEnter={(e) => {
+                if (page !== currentPage && !isLoading) {
+                  e.currentTarget.style.background = 'rgba(255,255,255,0.05)';
+                  e.currentTarget.style.borderColor = 'rgba(255,255,255,0.15)';
+                }
+              }}
+              onMouseLeave={(e) => {
+                if (page !== currentPage && !isLoading) {
+                  e.currentTarget.style.background = 'transparent';
+                  e.currentTarget.style.borderColor = 'rgba(255,255,255,0.06)';
+                }
+              }}
+            >
+              {page}
+            </button>
+          )
+        ))}
+
+        <button
+          onClick={() => onPageChange(currentPage + 1)}
+          disabled={currentPage === effectiveTotalPages || effectiveTotalPages === 0 || isLoading}
+          style={{
+            width: 32,
+            height: 32,
+            borderRadius: 6,
+            border: '1px solid rgba(255,255,255,0.06)',
+            background: currentPage === effectiveTotalPages || effectiveTotalPages === 0 || isLoading ? 'transparent' : 'rgba(255,255,255,0.05)',
+            color: currentPage === effectiveTotalPages || effectiveTotalPages === 0 || isLoading ? 'rgba(255,255,255,0.2)' : 'rgba(255,255,255,0.6)',
+            cursor: currentPage === effectiveTotalPages || effectiveTotalPages === 0 || isLoading ? 'not-allowed' : 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            transition: 'all 0.2s'
+          }}
+          onMouseEnter={(e) => {
+            if (currentPage !== effectiveTotalPages && effectiveTotalPages !== 0 && !isLoading) {
+              e.currentTarget.style.background = 'rgba(59,130,246,0.15)';
+              e.currentTarget.style.borderColor = 'rgba(59,130,246,0.3)';
+            }
+          }}
+          onMouseLeave={(e) => {
+            if (currentPage !== effectiveTotalPages && effectiveTotalPages !== 0 && !isLoading) {
+              e.currentTarget.style.background = 'rgba(255,255,255,0.05)';
+              e.currentTarget.style.borderColor = 'rgba(255,255,255,0.06)';
+            }
+          }}
+        >
+          <MdChevronRight size={18} />
+        </button>
+      </div>
+
+      {onLimitChange && (
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 8
+        }}>
+          <span style={{
+            fontSize: 10,
+            color: 'var(--dim)'
+          }}>
+            Par page:
+          </span>
+          <select
+            value={itemsPerPage}
+            onChange={(e) => {
+              const newLimit = parseInt(e.target.value);
+              onLimitChange(newLimit);
+            }}
+            disabled={isLoading}
+            style={{
+              padding: '4px 8px',
+              background: 'rgba(255,255,255,0.05)',
+              border: '1px solid rgba(255,255,255,0.06)',
+              borderRadius: 4,
+              color: 'rgba(255,255,255,0.6)',
+              fontSize: 11,
+              cursor: isLoading ? 'not-allowed' : 'pointer',
+              outline: 'none',
+              opacity: isLoading ? 0.5 : 1
+            }}
+          >
+            <option value={15}>15</option>
+            <option value={20}>20</option>
+            <option value={50}>50</option>
+            <option value={100}>100</option>
+          </select>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ============ ZIP CONTENT POPUP ============
+function ZipContentPopup({ files, onClose, onSelectFile }) {
+  const groupedFiles = files.reduce((acc, file) => {
+    const parts = file.path.split('/');
+    const folder = parts.length > 1 ? parts.slice(0, -1).join('/') : 'Racine';
+    if (!acc[folder]) acc[folder] = [];
+    acc[folder].push(file);
+    return acc;
+  }, {});
+
+  const sortedFolders = Object.keys(groupedFiles).sort();
+
+  const getFileIcon = (filename) => {
+    const ext = filename.split('.').pop().toLowerCase();
+    const iconMap = {
+      'glb': '🎮', 'gltf': '🎮', 'obj': '🎮', 'fbx': '🎮',
+      'blend': '🎮', 'stl': '🎮', 'ply': '🎮', 'dae': '🎮',
+      '3ds': '🎮', 'usd': '🎮', 'usdz': '🎮', 'usda': '🎮',
+      'mtl': '📄', 'mat': '📄',
+      'jpg': '🖼️', 'jpeg': '🖼️', 'png': '🖼️', 'webp': '🖼️',
+      'tga': '🖼️', 'bmp': '🖼️', 'tiff': '🖼️', 'dds': '🖼️',
+      'exr': '🖼️', 'hdr': '🖼️',
+      'txt': '📝', 'json': '📋', 'xml': '📋'
+    };
+    return iconMap[ext] || '📄';
+  };
+
+  const getFileColor = (filename) => {
+    const ext = filename.split('.').pop().toLowerCase();
+    const modelExts = ['glb', 'gltf', 'obj', 'fbx', 'blend', 'stl', 'ply', 'dae', '3ds', 'usd', 'usdz'];
+    const textureExts = ['jpg', 'jpeg', 'png', 'webp', 'tga', 'bmp', 'tiff', 'dds', 'exr', 'hdr'];
+    
+    if (modelExts.includes(ext)) return '#10b981';
+    if (textureExts.includes(ext)) return '#3B82F6';
+    if (ext === 'mtl' || ext === 'mat') return '#8B5CF6';
+    return '#666';
+  };
+
+  const isModelFile = (filename) => {
+    const ext = filename.split('.').pop().toLowerCase();
+    return SUPPORTED_3D_FORMATS.includes(ext);
+  };
+
+  return (
+    <div style={{
+      position: 'fixed',
+      top: 0,
+      left: 0,
+      right: 0,
+      bottom: 0,
+      background: 'rgba(0,0,0,0.8)',
+      backdropFilter: 'blur(8px)',
+      zIndex: 3000,
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center'
+    }} onClick={onClose}>
+      <div style={{
+        background: '#0a0f1a',
+        borderRadius: 16,
+        border: '1px solid rgba(255,255,255,0.1)',
+        width: '90%',
+        maxWidth: 800,
+        maxHeight: '80vh',
+        display: 'flex',
+        flexDirection: 'column',
+        overflow: 'hidden'
+      }} onClick={(e) => e.stopPropagation()}>
+        <div style={{
+          padding: '16px 20px',
+          borderBottom: '1px solid rgba(255,255,255,0.1)',
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center'
+        }}>
+          <div>
+            <h3 style={{ margin: 0, color: '#fff', fontSize: 18 }}>
+              📦 Contenu du ZIP
+            </h3>
+            <p style={{ margin: '4px 0 0', fontSize: 12, color: 'rgba(255,255,255,0.6)' }}>
+              {files.length} fichier(s) trouvé(s)
+            </p>
+          </div>
+          <button onClick={onClose} style={{
+            background: 'rgba(255,255,255,0.1)',
+            border: 'none',
+            color: '#fff',
+            fontSize: 24,
+            cursor: 'pointer',
+            width: 40,
+            height: 40,
+            borderRadius: 8,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            transition: 'background 0.2s'
+          }}
+          onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(255,255,255,0.2)'}
+          onMouseLeave={(e) => e.currentTarget.style.background = 'rgba(255,255,255,0.1)'}>
+            ×
+          </button>
+        </div>
+
+        <div style={{
+          padding: '16px 20px',
+          overflowY: 'auto',
+          flex: 1
+        }}>
+          {sortedFolders.map((folder) => (
+            <div key={folder} style={{ marginBottom: 16 }}>
+              <div style={{
+                fontSize: 12,
+                color: '#3B82F6',
+                fontWeight: 600,
+                marginBottom: 8,
+                display: 'flex',
+                alignItems: 'center',
+                gap: 8
+              }}>
+                <span>📁</span>
+                <span>{folder}</span>
+                <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.4)' }}>
+                  ({groupedFiles[folder].length} fichier(s))
+                </span>
+              </div>
+              <div style={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(auto-fill, minmax(250px, 1fr))',
+                gap: 6
+              }}>
+                {groupedFiles[folder].map((file, index) => (
+                  <div
+                    key={index}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 10,
+                      padding: '8px 12px',
+                      background: 'rgba(255,255,255,0.05)',
+                      borderRadius: 6,
+                      cursor: isModelFile(file.filename) ? 'pointer' : 'default',
+                      transition: 'all 0.2s',
+                      border: '1px solid transparent'
+                    }}
+                    onClick={() => {
+                      if (isModelFile(file.filename)) {
+                        onSelectFile(file);
+                      }
+                    }}
+                    onMouseEnter={(e) => {
+                      if (isModelFile(file.filename)) {
+                        e.currentTarget.style.background = 'rgba(16,185,129,0.15)';
+                        e.currentTarget.style.borderColor = 'rgba(16,185,129,0.3)';
+                      }
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.background = 'rgba(255,255,255,0.05)';
+                      e.currentTarget.style.borderColor = 'transparent';
+                    }}
+                  >
+                    <span style={{ fontSize: 20 }}>{getFileIcon(file.filename)}</span>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{
+                        fontSize: 13,
+                        color: '#fff',
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                        whiteSpace: 'nowrap'
+                      }}>
+                        {file.filename}
+                      </div>
+                      <div style={{
+                        fontSize: 10,
+                        color: 'rgba(255,255,255,0.4)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 8
+                      }}>
+                        <span style={{ color: getFileColor(file.filename) }}>
+                          {file.extension.toUpperCase()}
+                        </span>
+                        <span>•</span>
+                        <span>{(file.size / 1024).toFixed(1)} KB</span>
+                        {isModelFile(file.filename) && (
+                          <span style={{ color: '#10b981', fontSize: 9 }}>
+                            🎯 Cliquer pour visualiser
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+
+        <div style={{
+          padding: '12px 20px',
+          borderTop: '1px solid rgba(255,255,255,0.05)',
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center'
+        }}>
+          <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)' }}>
+            💡 Cliquez sur un fichier modèle 3D pour le visualiser
+          </span>
+          <button onClick={onClose} style={{
+            padding: '6px 16px',
+            background: 'rgba(255,255,255,0.1)',
+            border: 'none',
+            borderRadius: 6,
+            color: '#fff',
+            cursor: 'pointer',
+            fontSize: 12,
+            transition: 'background 0.2s'
+          }}
+          onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(255,255,255,0.2)'}
+          onMouseLeave={(e) => e.currentTarget.style.background = 'rgba(255,255,255,0.1)'}>
+            Fermer
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+const AssetsPanel = ({ searchQuery = '' }) => {
   const [assets, setAssets] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [page, setPage] = useState(1);
+  const [limit, setLimit] = useState(15);
   const [totalPages, setTotalPages] = useState(1);
   const [totalAssets, setTotalAssets] = useState(0);
   const [showFilters, setShowFilters] = useState(false);
@@ -83,6 +629,12 @@ const AssetsPanel = ({ searchQuery = '' }) => {
   const [showModelViewer, setShowModelViewer] = useState(false);
   const [selectedModel, setSelectedModel] = useState(null);
   
+  // États pour la popup ZIP
+  const [showZipPopup, setShowZipPopup] = useState(false);
+  const [zipFiles, setZipFiles] = useState([]);
+  const [currentAssetId, setCurrentAssetId] = useState(null);
+  const [currentAssetName, setCurrentAssetName] = useState('');
+
   const isMounted = useRef(true);
 
   // États pour les filtres avancés
@@ -96,6 +648,174 @@ const AssetsPanel = ({ searchQuery = '' }) => {
     date_from: '',
     date_to: ''
   });
+
+  // ============ FONCTIONS POUR LA GESTION DES ZIP ============
+
+  // Fonction de téléchargement avec timeout
+  const fetchWithTimeout = async (url, options, timeout = 30000) => {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), timeout);
+    
+    try {
+      const response = await fetch(url, {
+        ...options,
+        signal: controller.signal
+      });
+      clearTimeout(timeoutId);
+      return response;
+    } catch (error) {
+      clearTimeout(timeoutId);
+      if (error.name === 'AbortError') {
+        throw new Error('Le téléchargement a expiré. Veuillez réessayer.');
+      }
+      throw error;
+    }
+  };
+
+  // Extraction du contenu ZIP
+  const extractZipContent = async (blob) => {
+    if (!blob || blob.size === 0) {
+      throw new Error('Le fichier ZIP est vide');
+    }
+
+    try {
+      const zip = await JSZip.loadAsync(blob);
+      const files = [];
+      zip.forEach((relativePath, file) => {
+        if (!file.dir) {
+          const pathParts = relativePath.split('/');
+          const filename = pathParts[pathParts.length - 1];
+          const ext = filename.split('.').pop().toLowerCase();
+          const folder = pathParts.slice(0, -1).join('/');
+
+          files.push({
+            filename: filename,
+            path: relativePath,
+            folder: folder || 'Racine',
+            extension: ext,
+            size: file._data?.uncompressedSize || 0
+          });
+        }
+      });
+      
+      if (files.length === 0) {
+        throw new Error('Le ZIP ne contient aucun fichier');
+      }
+      
+      return files;
+    } catch (error) {
+      console.error('Erreur extraction ZIP:', error);
+      if (error.message.includes('invalid') || error.message.includes('corrupt')) {
+        throw new Error('Le fichier ZIP est corrompu ou invalide');
+      }
+      throw error;
+    }
+  };
+
+  // Fonction pour analyser le contenu du ZIP
+  const analyzeZipContent = async (assetId, token) => {
+    try {
+      const response = await fetchWithTimeout(
+        `${API_BASE_URL}/assets/${assetId}/download`,
+        {
+          method: 'GET',
+          headers: { 
+            'Authorization': `Bearer ${token}`
+          }
+        },
+        30000
+      );
+
+      if (!response.ok) {
+        if (response.status === 206) {
+          console.warn('Erreur 206 (Partial Content) détectée, nouvelle tentative...');
+          const response2 = await fetchWithTimeout(
+            `${API_BASE_URL}/assets/${assetId}/download`,
+            {
+              method: 'GET',
+              headers: { 
+                'Authorization': `Bearer ${token}`
+              }
+            },
+            30000
+          );
+          if (!response2.ok) {
+            throw new Error(`HTTP ${response2.status} - ${response2.statusText}`);
+          }
+          const blob = await response2.blob();
+          return await extractZipContent(blob);
+        }
+        throw new Error(`HTTP ${response.status} - ${response.statusText}`);
+      }
+
+      const blob = await response.blob();
+      return await extractZipContent(blob);
+      
+    } catch (error) {
+      console.error('Erreur analyse ZIP:', error);
+      throw error;
+    }
+  };
+
+  // Fonction pour ouvrir la popup ZIP
+  const openZipPopup = async (asset) => {
+    const token = localStorage.getItem('token');
+    if (!token) { 
+      alert('Connectez-vous'); 
+      return; 
+    }
+
+    setLoading(true);
+    setError(null);
+    
+    try {
+      const files = await analyzeZipContent(asset.id, token);
+      if (files && files.length > 0) {
+        setZipFiles(files);
+        setCurrentAssetId(asset.id);
+        setCurrentAssetName(asset.title || asset.name);
+        setShowZipPopup(true);
+      } else {
+        setError('Le ZIP ne contient aucun fichier');
+      }
+    } catch (err) {
+      console.error('Erreur analyse ZIP:', err);
+      if (err.message.includes('206') || err.message.includes('Partial')) {
+        setError('Erreur de téléchargement partiel. Veuillez réessayer.');
+      } else if (err.message.includes('corrompu') || err.message.includes('invalide')) {
+        setError('Le fichier ZIP est corrompu ou invalide.');
+      } else if (err.message.includes('expiré')) {
+        setError('Le téléchargement a expiré. Veuillez réessayer.');
+      } else {
+        setError(`Erreur: ${err.message}`);
+      }
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleSelectZipFile = (file) => {
+    setShowZipPopup(false);
+    
+    const token = localStorage.getItem('token');
+    if (!token) { 
+      alert('Connectez-vous'); 
+      return; 
+    }
+
+    const asset = assets.find(a => a.id === currentAssetId);
+    if (!asset) return;
+
+    setSelectedModel({ 
+      id: currentAssetId, 
+      name: file.filename,
+      token, 
+      ext: 'zip',
+      asset: asset,
+      selectedZipFile: file
+    });
+    setShowModelViewer(true);
+  };
 
   useEffect(() => {
     window.downloadAsset = handleDownloadFromModal;
@@ -112,66 +832,71 @@ const AssetsPanel = ({ searchQuery = '' }) => {
     }
   }, [searchQuery]);
 
-// Récupérer les assets
-const fetchAssets = useCallback(async (pageNum = page) => {
-  try {
-    setLoading(true);
-    const token = localStorage.getItem('token');
-    if (!token) {
-      throw new Error('Non authentifié');
+  // ============ FONCTION FETCH ASSETS CORRIGÉE ============
+  const fetchAssets = useCallback(async (pageNum = page) => {
+    try {
+      setLoading(true);
+      const token = localStorage.getItem('token');
+      if (!token) {
+        throw new Error('Non authentifié');
+      }
+
+      const buildQueryParams = (extra = {}) => {
+        const params = new URLSearchParams();
+        params.set('page', pageNum);
+        params.set('limit', limit);
+
+        if (filters.search) params.set('search', filters.search);
+        if (filters.visibility) params.set('visibility', filters.visibility);
+        if (filters.file_type) params.set('file_type', filters.file_type);
+        if (filters.created_by) params.set('created_by', filters.created_by);
+        if (filters.date_from) params.set('date_from', filters.date_from);
+        if (filters.date_to) params.set('date_to', filters.date_to);
+
+        Object.entries(extra).forEach(([key, value]) => {
+          if (value) params.set(key, value);
+        });
+
+        return params.toString();
+      };
+
+      let url;
+      if (filters.category && filters.project) {
+        url = `/assets?${buildQueryParams({ category_id: filters.category, project_id: filters.project })}`;
+      } else if (filters.category) {
+        url = `/categories/${filters.category}/assets?${buildQueryParams()}`;
+      } else if (filters.project) {
+        url = `/projects/${filters.project}/assets?${buildQueryParams()}`;
+      } else {
+        url = `/assets?${buildQueryParams()}`;
+      }
+
+      console.log('🔍 Fetching assets from:', url); // Debug
+      const data = await apiRequest(url);
+      console.log('📦 Données reçues:', data); // Debug
+
+      // Gestion des différentes structures de réponse possibles
+      const assetsList = data.assets || data.data || [];
+      const pagination = data.pagination || {};
+      
+      setAssets(assetsList);
+      setTotalPages(pagination.totalPages || data.totalPages || Math.ceil((pagination.total || data.total || 0) / limit) || 1);
+      setTotalAssets(pagination.total || data.total || 0);
+      setError(null);
+    } catch (err) {
+      console.error('❌ Erreur chargement assets:', err);
+      if (isMounted.current) {
+        setError(err.message);
+      }
+    } finally {
+      setLoading(false);
     }
+  }, [filters, limit]); // ⚠️ page N'EST PAS dans les dépendances
 
-    // Construire les query params communs (hors category/project, gérés à part)
-    const buildQueryParams = (extra = {}) => {
-      const params = new URLSearchParams();
-      params.set('page', pageNum);
-      params.set('limit', 20);
-
-      if (filters.search) params.set('search', filters.search);
-      if (filters.visibility) params.set('visibility', filters.visibility);
-      if (filters.file_type) params.set('file_type', filters.file_type);
-      if (filters.created_by) params.set('created_by', filters.created_by);
-      if (filters.date_from) params.set('date_from', filters.date_from);
-      if (filters.date_to) params.set('date_to', filters.date_to);
-
-      Object.entries(extra).forEach(([key, value]) => {
-        if (value) params.set(key, value);
-      });
-
-      return params.toString();
-    };
-
-    let url;
-    if (filters.category && filters.project) {
-      // Les deux filtres sont actifs : on utilise l'endpoint général
-      // car on ne peut pas combiner deux endpoints dédiés
-      url = `/assets?${buildQueryParams({ category_id: filters.category, project_id: filters.project })}`;
-    } else if (filters.category) {
-      // Endpoint dédié : assets d'une catégorie
-      url = `/categories/${filters.category}/assets?${buildQueryParams()}`;
-    } else if (filters.project) {
-      // Endpoint dédié : assets d'un projet
-      url = `/projects/${filters.project}/assets?${buildQueryParams()}`;
-    } else {
-      // Aucun filtre catégorie/projet : endpoint général
-      url = `/assets?${buildQueryParams()}`;
-    }
-
-    const data = await apiRequest(url);
-
-    setAssets(data.assets || data.data || []);
-    setTotalPages(data.pagination?.totalPages || data.totalPages || 1);
-    setTotalAssets(data.pagination?.total || data.total || 0);
-    setError(null);
-  } catch (err) {
-    console.error('Erreur chargement assets:', err);
-    if (isMounted.current) {
-      setError(err.message);
-    }
-  } finally {
-    setLoading(false);
-  }
-}, [filters, page]);
+  // ============ USEFFECT CORRIGÉ ============
+  useEffect(() => {
+    fetchAssets(page);
+  }, [page]); // ⚠️ fetchAssets N'EST PAS dans les dépendances
 
   // Récupérer les projets
   const fetchProjects = useCallback(async () => {
@@ -290,6 +1015,7 @@ const fetchAssets = useCallback(async (pageNum = page) => {
 
       setShowConfirmModal(false);
       setAssetToDelete(null);
+      // Recharger la page actuelle après suppression
       await fetchAssets(page);
     } catch (err) {
       console.error('Erreur suppression:', err);
@@ -334,13 +1060,16 @@ const fetchAssets = useCallback(async (pageNum = page) => {
     }
   };
 
-  // === FONCTION DE VISUALISATION MODIFIÉE ===
+  // === FONCTION DE VISUALISATION ===
   const handleView = (asset) => {
-    // Vérifier si c'est un modèle 3D
+    if (isZipFile(asset)) {
+      openZipPopup(asset);
+      return;
+    }
+
     if (is3DModel(asset)) {
       openModelViewer(asset);
     } else {
-      // Pour les autres types, utiliser le modal de prévisualisation
       setPreviewAsset(asset);
       setShowPreviewModal(true);
     }
@@ -354,11 +1083,19 @@ const fetchAssets = useCallback(async (pageNum = page) => {
     }
   };
 
-  // Changer de page
+  // ============ GESTIONNAIRES DE PAGINATION CORRIGÉS ============
   const handlePageChange = (newPage) => {
+    console.log('📄 Changement de page vers:', newPage);
     if (newPage >= 1 && newPage <= totalPages) {
       setPage(newPage);
+      // Le useEffect avec [page] va déclencher le rechargement
     }
+  };
+
+  const handleLimitChange = (newLimit) => {
+    console.log('📏 Changement de limite vers:', newLimit);
+    setLimit(newLimit);
+    setPage(1); // Reset à la page 1
   };
 
   // Gestion des filtres
@@ -384,10 +1121,7 @@ const fetchAssets = useCallback(async (pageNum = page) => {
   // Compter le nombre de filtres actifs
   const activeFiltersCount = Object.values(filters).filter(v => v !== '').length;
 
-  useEffect(() => {
-    fetchAssets(page);
-  }, [fetchAssets, page]);
-
+  // Chargement initial
   useEffect(() => {
     fetchProjects();
     fetchCategories();
@@ -485,7 +1219,6 @@ const fetchAssets = useCallback(async (pageNum = page) => {
             gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))',
             gap: '12px'
           }}>
-            {/* Filtre par catégorie */}
             <div>
               <label style={{ fontSize: 10, color: 'var(--dim)', display: 'block', marginBottom: 4 }}>
                 <LiaTagSolid size={12} style={{ marginRight: 4 }} />
@@ -504,22 +1237,15 @@ const fetchAssets = useCallback(async (pageNum = page) => {
                   fontSize: 12
                 }}
               >
-                <option style={{
-                  background: 'rgba(0,0,0)', 
-                  color: 'white',
-                }} value="">Toutes</option>
+                <option style={{ background: 'rgba(0,0,0)', color: 'white' }} value="">Toutes</option>
                 {categories.map(cat => (
-                  <option style={{
-                  background: 'rgba(0,0,0)', 
-                  color: 'white',
-                }} key={cat.id} value={cat.id}>
+                  <option style={{ background: 'rgba(0,0,0)', color: 'white' }} key={cat.id} value={cat.id}>
                     {cat.icon || '📁'} {cat.display_name || cat.name}
                   </option>
                 ))}
               </select>
             </div>
 
-            {/* Filtre par projet */}
             <div>
               <label style={{ fontSize: 10, color: 'var(--dim)', display: 'block', marginBottom: 4 }}>
                 <LiaFolderOpen size={12} style={{ marginRight: 4 }} />
@@ -538,22 +1264,15 @@ const fetchAssets = useCallback(async (pageNum = page) => {
                   fontSize: 12
                 }}
               >
-                <option style={{
-                  background: 'rgba(0,0,0)', 
-                  color: 'white',
-                }} value="">Tous</option>
+                <option style={{ background: 'rgba(0,0,0)', color: 'white' }} value="">Tous</option>
                 {projects.map(project => (
-                  <option style={{
-                  background: 'rgba(0,0,0)', 
-                  color: 'white',
-                }} key={project.id} value={project.id}>
+                  <option style={{ background: 'rgba(0,0,0)', color: 'white' }} key={project.id} value={project.id}>
                     {project.name}
                   </option>
                 ))}
               </select>
             </div>
 
-            {/* Filtre par type */}
             <div>
               <label style={{ fontSize: 10, color: 'var(--dim)', display: 'block', marginBottom: 4 }}>Type</label>
               <select
@@ -569,42 +1288,17 @@ const fetchAssets = useCallback(async (pageNum = page) => {
                   fontSize: 12
                 }}
               >
-                <option style={{
-                  background: 'rgba(0,0,0)', 
-                  color: 'white',
-                }} value="">Tous</option>
-                <option style={{
-                  background: 'rgba(0,0,0)', 
-                  color: 'white',
-                }} value="image">🖼️ Images</option>
-                <option style={{
-                  background: 'rgba(0,0,0)', 
-                  color: 'white',
-                }} value="video">🎬 Vidéos</option>
-                <option style={{
-                  background: 'rgba(0,0,0)', 
-                  color: 'white',
-                }} value="3d_model">🎮 Modèles 3D</option>
-                <option style={{
-                  background: 'rgba(0,0,0)', 
-                  color: 'white',
-                }} value="archive">📦 Archives</option>
-                <option style={{
-                  background: 'rgba(0,0,0)', 
-                  color: 'white',
-                }} value="document">📄 Documents</option>
-                <option style={{
-                  background: 'rgba(0,0,0)', 
-                  color: 'white',
-                }} value="audio">🎵 Audio</option>
-                <option style={{
-                  background: 'rgba(0,0,0)', 
-                  color: 'white',
-                }} value="other">📎 Autres</option>
+                <option style={{ background: 'rgba(0,0,0)', color: 'white' }} value="">Tous</option>
+                <option style={{ background: 'rgba(0,0,0)', color: 'white' }} value="image">🖼️ Images</option>
+                <option style={{ background: 'rgba(0,0,0)', color: 'white' }} value="video">🎬 Vidéos</option>
+                <option style={{ background: 'rgba(0,0,0)', color: 'white' }} value="3d_model">🎮 Modèles 3D</option>
+                <option style={{ background: 'rgba(0,0,0)', color: 'white' }} value="archive">📦 Archives</option>
+                <option style={{ background: 'rgba(0,0,0)', color: 'white' }} value="document">📄 Documents</option>
+                <option style={{ background: 'rgba(0,0,0)', color: 'white' }} value="audio">🎵 Audio</option>
+                <option style={{ background: 'rgba(0,0,0)', color: 'white' }} value="other">📎 Autres</option>
               </select>
             </div>
 
-            {/* Filtre par visibilité */}
             <div>
               <label style={{ fontSize: 10, color: 'var(--dim)', display: 'block', marginBottom: 4 }}>Visibilité</label>
               <select
@@ -620,22 +1314,12 @@ const fetchAssets = useCallback(async (pageNum = page) => {
                   fontSize: 12
                 }}
               >
-                <option style={{
-                  background: 'rgba(0,0,0)', 
-                  color: 'white',
-                }} value="">Toutes</option>
-                <option style={{
-                  background: 'rgba(0,0,0)', 
-                  color: 'white',
-                }} value="public">🌍 Public</option>
-                <option style={{
-                  background: 'rgba(0,0,0)', 
-                  color: 'white',
-                }} value="private">🔒 Privé</option>
+                <option style={{ background: 'rgba(0,0,0)', color: 'white' }} value="">Toutes</option>
+                <option style={{ background: 'rgba(0,0,0)', color: 'white' }} value="public">🌍 Public</option>
+                <option style={{ background: 'rgba(0,0,0)', color: 'white' }} value="private">🔒 Privé</option>
               </select>
             </div>
 
-            {/* Filtre par créateur */}
             <div>
               <label style={{ fontSize: 10, color: 'var(--dim)', display: 'block', marginBottom: 4 }}>
                 <LiaUserSolid size={12} style={{ marginRight: 4 }} />
@@ -654,15 +1338,9 @@ const fetchAssets = useCallback(async (pageNum = page) => {
                   fontSize: 12
                 }}
               >
-                <option style={{
-                  background: 'rgba(0,0,0)', 
-                  color: 'white',
-                }} value="">Tous</option>
+                <option style={{ background: 'rgba(0,0,0)', color: 'white' }} value="">Tous</option>
                 {users.map(user => (
-                  <option style={{
-                  background: 'rgba(0,0,0)', 
-                  color: 'white',
-                }} key={user.id} value={user.id}>
+                  <option style={{ background: 'rgba(0,0,0)', color: 'white' }} key={user.id} value={user.id}>
                     {user.first_name || user.name || user.email || `Utilisateur ${user.id}`}
                   </option>
                 ))}
@@ -686,9 +1364,13 @@ const fetchAssets = useCallback(async (pageNum = page) => {
         }}>
           {assets.map((asset) => {
             const is3D = is3DModel(asset);
+            const isZIP = isZipFile(asset);
+            const isTexture = isTextureFile(asset);
+            const isMaterial = isMaterialFile(asset);
             const isHovered = hoveredAssetId === asset.id;
             const isDeleting = deletingId === asset.id;
             const isDownloading = downloadingId === asset.id;
+            const fileCategory = getFileCategory(asset);
 
             return (
               <div
@@ -718,7 +1400,89 @@ const fetchAssets = useCallback(async (pageNum = page) => {
                     overflow: 'hidden'
                   }}
                 >
-                  {is3D ? (
+                  {isZIP ? (
+                    asset.capture_url ? (
+                      <>
+                        <img
+                          src={`${API_BASE_URL.replace('/api', '')}${asset.capture_url}`}
+                          alt={`Aperçu de ${asset.title || asset.name}`}
+                          style={{
+                            width: '100%',
+                            height: '100%',
+                            objectFit: 'cover',
+                            objectPosition: 'center'
+                          }}
+                          onError={(e) => {
+                            e.target.style.display = 'none';
+                            e.target.parentElement.querySelector('.default-zip-preview').style.display = 'flex';
+                          }}
+                        />
+                        <div className="default-zip-preview" style={{ display: 'none', textAlign: 'center' }}>
+                          <div style={{ fontSize: 64, marginBottom: 8 }}>📦</div>
+                          <div style={{ fontSize: 12, color: '#f59e0b' }}>Archive 3D</div>
+                          <div style={{ fontSize: 10, color: '#666' }}>Contient un modèle 3D</div>
+                        </div>
+                        <div style={{
+                          position: 'absolute',
+                          top: 10,
+                          right: 10,
+                          background: 'rgba(0,0,0,.7)',
+                          backdropFilter: 'blur(4px)',
+                          padding: '4px 10px',
+                          borderRadius: 12,
+                          fontSize: 11,
+                          color: '#f59e0b',
+                          border: '1px solid rgba(245,158,11,.3)',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: 4,
+                          zIndex: 2
+                        }}>
+                          📦 ZIP
+                        </div>
+                        {isHovered && (
+                          <div style={{
+                            position: 'absolute',
+                            bottom: 16,
+                            left: '50%',
+                            transform: 'translateX(-50%)',
+                            background: 'rgba(0,0,0,.8)',
+                            padding: '6px 14px',
+                            borderRadius: 20,
+                            fontSize: 12,
+                            color: '#10b981',
+                            whiteSpace: 'nowrap',
+                            zIndex: 2
+                          }}>
+                            📂 Explorer le contenu
+                          </div>
+                        )}
+                      </>
+                    ) : (
+                      <div style={{ textAlign: 'center' }}>
+                        <div style={{ fontSize: 64, marginBottom: 8 }}>📦</div>
+                        <div style={{ fontSize: 12, color: '#f59e0b' }}>Archive 3D</div>
+                        <div style={{ fontSize: 10, color: '#666' }}>Contient un modèle 3D</div>
+                        {isHovered && (
+                          <div style={{
+                            position: 'absolute',
+                            bottom: 16,
+                            left: '50%',
+                            transform: 'translateX(-50%)',
+                            background: 'rgba(0,0,0,.8)',
+                            padding: '6px 14px',
+                            borderRadius: 20,
+                            fontSize: 12,
+                            color: '#10b981',
+                            whiteSpace: 'nowrap',
+                            zIndex: 2
+                          }}>
+                            📂 Explorer le contenu
+                          </div>
+                        )}
+                      </div>
+                    )
+                  ) : is3D ? (
                     asset.capture_url ? (
                       <>
                         <img
@@ -760,7 +1524,14 @@ const fetchAssets = useCallback(async (pageNum = page) => {
                     ) : (
                       <div style={{ textAlign: 'center' }}>
                         <div style={{ fontSize: 64, marginBottom: 8 }}><PiCubeLight /></div>
-                        <div style={{ fontSize: 12, color: '#3b82f6' }}>Modèle 3D</div>
+                        <div style={{ fontSize: 12, color: '#3b82f6' }}>
+                          Modèle 3D
+                          {asset.ext && (
+                            <span style={{ fontSize: 10, display: 'block', color: '#666' }}>
+                              {asset.ext.toUpperCase()}
+                            </span>
+                          )}
+                        </div>
                         {isHovered && (
                           <div style={{
                             position: 'absolute',
@@ -779,6 +1550,29 @@ const fetchAssets = useCallback(async (pageNum = page) => {
                         )}
                       </div>
                     )
+                  ) : isTexture ? (
+                    asset.capture_url ? (
+                      <img
+                        src={`${API_BASE_URL.replace('/api', '')}${asset.capture_url}`}
+                        alt={`Aperçu de ${asset.title || asset.name}`}
+                        style={{
+                          width: '100%',
+                          height: '100%',
+                          objectFit: 'cover',
+                          objectPosition: 'center'
+                        }}
+                      />
+                    ) : (
+                      <div style={{ textAlign: 'center' }}>
+                        <div style={{ fontSize: 64, marginBottom: 8 }}>🖼️</div>
+                        <div style={{ fontSize: 12, color: '#3B82F6' }}>Texture</div>
+                      </div>
+                    )
+                  ) : isMaterial ? (
+                    <div style={{ textAlign: 'center' }}>
+                      <div style={{ fontSize: 64, marginBottom: 8 }}>📄</div>
+                      <div style={{ fontSize: 12, color: '#8B5CF6' }}>Matériau</div>
+                    </div>
                   ) : (
                     asset.capture_url ? (
                       <img
@@ -817,11 +1611,19 @@ const fetchAssets = useCallback(async (pageNum = page) => {
                       {asset.description}
                     </div>
                   )}
-                  {is3D && (
-                    <div style={{ fontSize: 10, color: '#10b981', marginBottom: 10 }}>
-                      <PiCubeLight /> Modèle 3D
-                    </div>
-                  )}
+                  
+                  {/* Indicateur de type avec icône */}
+                  <div style={{ fontSize: 10, marginBottom: 10, color: getFileColor(asset) }}>
+                    {getFileIcon(asset)} {fileCategory === '3d_model' ? 'Modèle 3D' : 
+                       fileCategory === 'archive' ? 'Archive 3D' :
+                       fileCategory === 'texture' ? 'Texture' :
+                       fileCategory === 'material' ? 'Matériau' : 'Fichier'}
+                    {fileCategory === '3d_model' && asset.ext && (
+                      <span style={{ fontSize: 9, color: '#666', marginLeft: 4 }}>
+                        ({asset.ext.toUpperCase()})
+                      </span>
+                    )}
+                  </div>
 
                   {/* Tags d'information */}
                   <div style={{
@@ -864,6 +1666,17 @@ const fetchAssets = useCallback(async (pageNum = page) => {
                         {asset.first_name} {asset.last_name || ''}
                       </span>
                     )}
+                    {isZIP && (
+                      <span style={{
+                        fontSize: 9,
+                        background: 'rgba(245,158,11,.15)',
+                        color: '#f59e0b',
+                        padding: '2px 8px',
+                        borderRadius: 10
+                      }}>
+                        📦 ZIP
+                      </span>
+                    )}
                     <span style={{
                       fontSize: 9,
                       background: asset.visibility === 'public' ? 'rgba(16,185,129,.15)' : asset.visibility === 'team' ? 'rgba(59,130,246,.15)' : 'rgba(239,68,68,.15)',
@@ -888,24 +1701,33 @@ const fetchAssets = useCallback(async (pageNum = page) => {
                       onClick={() => handleView(asset)}
                       style={{
                         flex: 1,
-                        background: is3D ? 'rgba(16,185,129,.15)' : 'rgba(59,130,246,.15)',
+                        background: is3D || isZIP ? 'rgba(59,130,246,.15)' : 'rgba(255,255,255,.05)',
                         border: 'none',
                         padding: '7px',
                         borderRadius: 6,
-                        color: is3D ? '#10b981' : '#3B82F6',
-                        cursor: 'pointer',
+                        color: is3D || isZIP ? '#3B82F6' : '#666',
+                        cursor: is3D || isZIP ? 'pointer' : 'default',
                         fontSize: 12,
                         display: 'flex',
                         alignItems: 'center',
                         justifyContent: 'center',
                         gap: 6,
-                        transition: 'background 0.2s'
+                        transition: 'background 0.2s',
+                        opacity: is3D || isZIP ? 1 : 0.5
                       }}
-                      onMouseEnter={(e) => e.currentTarget.style.background = is3D ? 'rgba(16,185,129,.25)' : 'rgba(59,130,246,.25)'}
-                      onMouseLeave={(e) => e.currentTarget.style.background = is3D ? 'rgba(16,185,129,.15)' : 'rgba(59,130,246,.15)'}
+                      onMouseEnter={(e) => {
+                        if (is3D || isZIP) {
+                          e.currentTarget.style.background = 'rgba(59,130,246,.25)';
+                        }
+                      }}
+                      onMouseLeave={(e) => {
+                        if (is3D || isZIP) {
+                          e.currentTarget.style.background = 'rgba(59,130,246,.15)';
+                        }
+                      }}
                     >
                       <LiaEyeSolid size={14} />
-                      {is3D ? '3D Viewer' : 'Preview'}
+                      {isZIP ? '📂 Explorer' : is3D ? '3D Viewer' : 'Preview'}
                     </button>
                     <button
                       onClick={() => handleDownload(asset)}
@@ -940,7 +1762,6 @@ const fetchAssets = useCallback(async (pageNum = page) => {
                       )}
                     </button>
 
-                    {/* Bouton Supprimer */}
                     <button
                       onClick={() => {
                         setAssetToDelete({ id: asset.id, name: asset.title || asset.name });
@@ -1006,72 +1827,28 @@ const fetchAssets = useCallback(async (pageNum = page) => {
           </div>
         )}
 
-        {/* Pagination */}
-        {totalPages > 1 && (
-          <div className="pag" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 18px', borderTop: '1px solid rgba(255,255,255,.06)' }}>
-            <span className="pag-i" style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10, color: 'var(--dim)' }}>
-              {totalAssets > 0 ? ((page - 1) * 20) + 1 : 0}–{Math.min(page * 20, totalAssets)} / {totalAssets}
-            </span>
-            <div className="pag-btns" style={{ display: 'flex', gap: 3 }}>
-              <button
-                className="pb"
-                onClick={() => handlePageChange(page - 1)}
-                disabled={page === 1}
-                style={{
-                  width: 27, height: 27, borderRadius: 5,
-                  border: '1px solid rgba(255,255,255,.06)',
-                  background: 'transparent',
-                  cursor: page === 1 ? 'not-allowed' : 'pointer',
-                  opacity: page === 1 ? 0.5 : 1,
-                  color: 'white'
-                }}
-              >
-                ‹
-              </button>
-              {[...Array(Math.min(5, totalPages))].map((_, i) => {
-                let pageNum;
-                if (totalPages <= 5) pageNum = i + 1;
-                else if (page <= 3) pageNum = i + 1;
-                else if (page >= totalPages - 2) pageNum = totalPages - 4 + i;
-                else pageNum = page - 2 + i;
-                if (pageNum > totalPages) return null;
-                return (
-                  <button
-                    key={i}
-                    className={`pb ${pageNum === page ? 'on' : ''}`}
-                    onClick={() => handlePageChange(pageNum)}
-                    style={{
-                      width: 27, height: 27, borderRadius: 5,
-                      border: '1px solid rgba(255,255,255,.06)',
-                      background: pageNum === page ? 'rgba(59,130,246,.15)' : 'transparent',
-                      borderColor: pageNum === page ? 'rgba(59,130,246,.4)' : undefined,
-                      color: pageNum === page ? '#3B82F6' : 'white',
-                      cursor: 'pointer'
-                    }}
-                  >
-                    {pageNum}
-                  </button>
-                );
-              })}
-              <button
-                className="pb"
-                onClick={() => handlePageChange(page + 1)}
-                disabled={page === totalPages}
-                style={{
-                  width: 27, height: 27, borderRadius: 5,
-                  border: '1px solid rgba(255,255,255,.06)',
-                  background: 'transparent',
-                  cursor: page === totalPages ? 'not-allowed' : 'pointer',
-                  opacity: page === totalPages ? 0.5 : 1,
-                  color: 'white'
-                }}
-              >
-                ›
-              </button>
-            </div>
-          </div>
+        {/* ============ PAGINATION ============ */}
+        {(totalPages > 1 || totalAssets > limit) && (
+          <Pagination
+            currentPage={page}
+            totalPages={totalPages}
+            totalItems={totalAssets}
+            itemsPerPage={limit}
+            onPageChange={handlePageChange}
+            onLimitChange={handleLimitChange}
+            isLoading={loading}
+          />
         )}
       </div>
+
+      {/* Popup ZIP */}
+      {showZipPopup && (
+        <ZipContentPopup 
+          files={zipFiles} 
+          onClose={() => setShowZipPopup(false)}
+          onSelectFile={handleSelectZipFile}
+        />
+      )}
 
       {/* Preview Modal pour les fichiers non-3D */}
       {showPreviewModal && previewAsset && (
@@ -1152,6 +1929,11 @@ const fetchAssets = useCallback(async (pageNum = page) => {
       )}
 
       <style>{`
+        @keyframes spin {
+          from { transform: rotate(0deg); }
+          to { transform: rotate(360deg); }
+        }
+
         .modal-overlay {
           position: fixed;
           top: 0;
@@ -1209,6 +1991,16 @@ const fetchAssets = useCallback(async (pageNum = page) => {
           display: flex;
           justify-content: flex-end;
           gap: 10px;
+        }
+
+        .spinner-small {
+          display: inline-block;
+          width: 12px;
+          height: 12px;
+          border: 2px solid rgba(59,130,246,0.2);
+          border-top: 2px solid #3B82F6;
+          border-radius: 50%;
+          animation: spin 0.8s linear infinite;
         }
       `}</style>
     </>
