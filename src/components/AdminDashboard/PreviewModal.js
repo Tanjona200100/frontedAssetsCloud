@@ -212,4 +212,4 @@ const formatFileSize = (bytes) => {
 };
 
 // Ajouter le base URL pour les assets
-const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://192.168.2.160:5000/api';
+const API_BASE_URL = process.env.REACT_APP_API_URL;

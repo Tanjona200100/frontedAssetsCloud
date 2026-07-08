@@ -14,8 +14,10 @@ import { CiLogout } from "react-icons/ci";
 import { Icons } from './UserDashboard/icons';
 import { TbCategory } from "react-icons/tb";
 import { FaFolderOpen } from "react-icons/fa6";
+import { LuUser } from "react-icons/lu";
 
-const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://192.168.2.73:5000/api';
+
+const API_BASE_URL = process.env.REACT_APP_API_URL;
 
 const apiRequest = async (endpoint, options = {}) => {
   const token = localStorage.getItem('token');
@@ -99,13 +101,14 @@ export default function Sidebar({ activePanel, setActivePanel }) {
     if (isAdmin) {
       return [
         { id: "dashboard", label: "Dashboard", icon: "dashboard" },
+        { id: "profil", label: "Profil", icon: "profil" },
         { id: "users", label: "Utilisateurs", icon: "users", badge: totalUsers.toString(), showBadge: true },
         { id: "assets", label: "Assets", icon: "assets", badge: "3", badgeRed: true },
         { id: "stats", label: "Statistiques", icon: "stats" },
         { id: "roles", label: "Rôles & Accès", icon: "roles" },
         { id: "gestion", label: "Gestions de projets", icon: "folder" },
         { id: "categorie", label: "Categorie", icon: "categorie" },
-        { id: "settings", label: "Paramètres", icon: "settings" }
+        { id: "settings", label: "Paramètres", icon: "settings" },
       ];
     }
     return [
@@ -127,7 +130,8 @@ export default function Sidebar({ activePanel, setActivePanel }) {
       roles: <GiPoliceBadge />,
       folder : <FaFolderOpen />,
       categorie :<TbCategory />,
-      settings: <CiSettings />
+      settings: <CiSettings />,
+      profil: <LuUser />,
     };
     const userIcons = {
       dashboard: Icons.grid,

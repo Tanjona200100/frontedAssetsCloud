@@ -912,28 +912,67 @@ export default function AssetsPanel({ searchQuery = '' }) {
     }
   };
 
-  // ============ DOWNLOAD ============
-  const handleDownload = async (assetId, assetName) => {
-    try {
-      const response = await fetch(`${API_BASE_URL}/assets/${assetId}/download`, {
-        headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
-      });
+// Dans la fonction handleDownload, modifiez l'URL pour utiliser API_BASE_URL
+const handleDownload = async (assetId, assetName) => {
+  try {
+    // Assurez-vous que l'URL est correcte
+    const downloadUrl = `${API_BASE_URL}/assets/${assetId}/download`;
+    console.log('Téléchargement depuis:', downloadUrl); // Pour déboguer
+    
+    const response = await fetch(downloadUrl, {
+      headers: { 
+        'Authorization': `Bearer ${localStorage.getItem('token')}`,
+        'Accept': '*/*' // Important pour les fichiers binaires
+      }
+    });
 
-      if (!response.ok) throw new Error(`Erreur: ${response.status}`);
-
-      const blob = await response.blob();
-      const url = window.URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = assetName;
-      document.body.appendChild(a);
-      a.click();
-      window.URL.revokeObjectURL(url);
-      document.body.removeChild(a);
-    } catch (err) {
-      setError(`Téléchargement échoué: ${err.message}`);
+    if (!response.ok) {
+      // Gestion spécifique des erreurs
+      if (response.status === 404) {
+        throw new Error('Fichier non trouvé');
+      }
+      if (response.status === 403) {
+        throw new Error('Vous n\'avez pas la permission de télécharger ce fichier');
+      }
+      throw new Error(`Erreur ${response.status}: ${response.statusText}`);
     }
-  };
+
+    // Récupérer le nom du fichier depuis les headers si disponible
+    const contentDisposition = response.headers.get('content-disposition');
+    let fileName = assetName;
+    if (contentDisposition) {
+      const match = contentDisposition.match(/filename="?(.+)"?/);
+      if (match) fileName = match[1];
+    }
+
+    const blob = await response.blob();
+    
+    // Vérifier que le blob n'est pas vide
+    if (blob.size === 0) {
+      throw new Error('Le fichier téléchargé est vide');
+    }
+    
+    // Créer l'URL de téléchargement
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = fileName;
+    
+    // Pour Safari et certains navigateurs
+    document.body.appendChild(a);
+    a.click();
+    
+    // Nettoyer
+    setTimeout(() => {
+      document.body.removeChild(a);
+      window.URL.revokeObjectURL(url);
+    }, 100);
+    
+  } catch (err) {
+    console.error('Erreur détaillée:', err);
+    setError(`Téléchargement échoué: ${err.message}`);
+  }
+};
 
   // ============ PREVIEW ============
   const openAssetPreview = (asset) => {

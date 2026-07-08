@@ -12,6 +12,7 @@ import AddUserModal from "../components/AdminDashboard/AddUserModal";
 import ProjectsPanel from "../components/AdminDashboard/ProjectsPanel";
 import ProjectAssetsPage from "../components/AdminDashboard/ProjectAssetsPage";
 import CategoriePanel from "../components/AdminDashboard/CategoriePanel";
+import ProfilePanel from "../components/UserDashboard/ProfilePanel";
 import "../components/AdminDashboard/adminDashboard.css";
 
 const AdminDashboard = () => {
@@ -67,6 +68,8 @@ const AdminDashboard = () => {
         return <CategoriePanel searchQuery={searchQuery} />;
       case "settings":
         return <SettingsPanel searchQuery={searchQuery} />;
+      case "profil":
+        return <ProfilePanel searchQuery={searchQuery} />;
       default:
         return <DashboardPanel searchQuery={searchQuery} />;
     }

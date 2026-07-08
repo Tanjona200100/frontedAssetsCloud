@@ -1,35 +1,23 @@
-// src/components/UserDashboard/ModelViewerBabylon.jsx
-import React, {
-  useState, useEffect, useRef, useCallback,
-  forwardRef, useImperativeHandle
-} from 'react';
-import * as BABYLON from '@babylonjs/core';
-import { registerBuiltInLoaders } from '@babylonjs/loaders/dynamic';
-import { OBJFileLoader } from '@babylonjs/loaders/OBJ';
-import {
-  Engine, Scene, SceneLoader, ArcRotateCamera, HemisphericLight,
-  DirectionalLight, MeshBuilder, StandardMaterial, PBRMaterial,
-  Color3, Vector3, ShadowGenerator, Texture
-} from '@babylonjs/core';
+// src/components/UserDashboard/ModelViewerThree.jsx
+// Version complète avec correction de l'erreur Button
+
+import React, { useState, useEffect, useCallback, useRef, forwardRef, useImperativeHandle, Suspense } from 'react';
+import { Canvas, useFrame } from '@react-three/fiber';
+import { OrbitControls, Environment, Html } from '@react-three/drei';
+import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader';
+import { OBJLoader } from 'three/examples/jsm/loaders/OBJLoader';
+import { STLLoader } from 'three/examples/jsm/loaders/STLLoader';
+import { FBXLoader } from 'three/examples/jsm/loaders/FBXLoader';
+import { MTLLoader } from 'three/examples/jsm/loaders/MTLLoader';
+import * as THREE from 'three';
 import JSZip from 'jszip';
 
-const API_BASE_URL = process.env.REACT_APP_API_URL;
+const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:5000';
 
-// ============ ENREGISTRER LES LOADERS BABYLON ============
-// IMPORTANT: Appeler registerBuiltInLoaders() avant tout chargement
-// et s'assurer que l'appel est fait une seule fois
-registerBuiltInLoaders();
-console.log('✅ Babylon.js loaders registered');
-
-// Ne pas avaler silencieusement les erreurs de matériaux OBJ/MTL :
-// utile pour diagnostiquer les textures manquantes sur les fichiers .obj
-OBJFileLoader.MATERIAL_LOADING_FAILS_SILENTLY = false;
-
-// ============ PARAMÈTRES DE LA VUE PAR DÉFAUT ============
-// Plus le multiplicateur est grand, plus le modèle apparaît petit/éloigné
-// au chargement initial (l'utilisateur peut ensuite zoomer lui-même).
-const DEFAULT_FIT_MULTIPLIER = 4;
-const MIN_DEFAULT_DISTANCE = 5;
+// ============ PARAMÈTRES DE CAMÉRA ============
+const DEFAULT_CAMERA_PADDING = 3.5;
+const MIN_CAMERA_DISTANCE = 3;
+const MAX_CAMERA_DISTANCE = 50;
 
 // ============ SYSTÈME DE FICHIERS VIRTUEL ============
 class VirtualFileSystem {
@@ -119,6 +107,31 @@ class VirtualFileSystem {
     return Array.from(this.files.keys());
   }
 
+  getTextureFiles() {
+    const textureExtensions = ['png', 'jpg', 'jpeg', 'gif', 'bmp', 'webp', 'tga', 'tif', 'tiff', 'dds'];
+    const textureFiles = [];
+    for (const [path, data] of this.files) {
+      const filename = path.split('/').pop();
+      const ext = filename.split('.').pop()?.toLowerCase() || '';
+      if (textureExtensions.includes(ext)) {
+        textureFiles.push({ path, filename, ext, data });
+      }
+    }
+    return textureFiles;
+  }
+
+  async getTextureBlob(path) {
+    const entry = this.findFile(path);
+    if (!entry) return null;
+    try {
+      const blob = await entry.async('blob');
+      return blob;
+    } catch (error) {
+      console.warn(`Erreur chargement texture ${path}:`, error);
+      return null;
+    }
+  }
+
   dispose() {
     this.files.clear();
     this.filenames.clear();
@@ -127,471 +140,919 @@ class VirtualFileSystem {
   }
 }
 
-// ============ FONCTIONS DE CHARGEMENT DES TEXTURES ============
+// ============ FONCTIONS ============
 
-async function applyZipTexturesToSceneBabylon(scene, virtualFS, abortSignal) {
-  if (!scene || abortSignal?.aborted) {
-    console.warn("Application des textures annulée");
-    return 0;
-  }
+function calculateModelStats(model) {
+  let vertices = 0;
+  let triangles = 0;
+  let meshes = 0;
+  const materials = new Set();
+  const textures = new Set();
 
-  const materials = scene.materials;
-  let texturesLoaded = 0;
-
-  const availableTextures = [];
-  for (const [path] of virtualFS.files) {
-    const filename = path.split('/').pop();
-    availableTextures.push({
-      fullPath: path,
-      filename: filename,
-      nameWithoutExt: filename.split('.').slice(0, -1).join('.').toLowerCase(),
-      ext: filename.split('.').pop().toLowerCase()
-    });
-  }
-
-  console.log('📁 Textures disponibles:', availableTextures.map(t => t.filename));
-
-  for (const material of materials) {
-    if (abortSignal?.aborted) break;
-
-    if (!material || (!(material instanceof StandardMaterial) && !(material instanceof PBRMaterial))) continue;
-
-    const textureProps = [
-      { prop: 'diffuseTexture', keywords: ['diffuse', 'albedo', 'color', 'col', 'basecolor'] },
-      { prop: 'ambientTexture', keywords: ['ambient', 'ao', 'occlusion'] },
-      { prop: 'specularTexture', keywords: ['specular', 'spec'] },
-      { prop: 'emissiveTexture', keywords: ['emissive', 'emission', 'emit'] },
-      { prop: 'bumpTexture', keywords: ['bump', 'height', 'disp'] },
-      { prop: 'normalTexture', keywords: ['normal', 'nor'] },
-      { prop: 'roughnessTexture', keywords: ['roughness', 'rough', 'rgh'] },
-      { prop: 'metallicTexture', keywords: ['metallic', 'metal'] },
-      { prop: 'opacityTexture', keywords: ['opacity', 'alpha', 'mask'] },
-    ];
-
-    for (const { prop, keywords } of textureProps) {
-      if (abortSignal?.aborted) break;
-
-      const texture = material[prop];
-      if (!texture || !texture.name) continue;
-
-      const textureName = texture.name;
-      const filename = textureName.split('/').pop();
-      const nameWithoutExt = filename.split('.').slice(0, -1).join('.').toLowerCase();
-
-      console.log(`🔍 Recherche texture pour ${prop}: ${filename}`);
-
-      let entry = virtualFS.findFile(textureName) || virtualFS.findFile(filename);
-
-      if (!entry) {
-        for (const tex of availableTextures) {
-          if (tex.nameWithoutExt === nameWithoutExt) {
-            entry = virtualFS.findFile(tex.fullPath);
-            if (entry) {
-              console.log(`✅ Trouvé par nom sans extension: ${tex.filename}`);
-              break;
-            }
-          }
-        }
+  model.traverse((child) => {
+    if (child.isMesh) {
+      meshes++;
+      const geom = child.geometry;
+      if (geom && geom.attributes && geom.attributes.position) {
+        vertices += geom.attributes.position.count;
+      }
+      if (geom && geom.index) {
+        triangles += geom.index.count / 3;
+      } else if (geom && geom.attributes && geom.attributes.position) {
+        triangles += geom.attributes.position.count / 3;
       }
 
-      if (!entry) {
-        for (const keyword of keywords) {
-          for (const tex of availableTextures) {
-            if (tex.nameWithoutExt.includes(keyword) || keyword.includes(tex.nameWithoutExt)) {
-              entry = virtualFS.findFile(tex.fullPath);
-              if (entry) {
-                console.log(`✅ Trouvé par mot-clé "${keyword}": ${tex.filename}`);
-                break;
+      if (child.material) {
+        const mats = Array.isArray(child.material) ? child.material : [child.material];
+        mats.forEach(mat => {
+          if (mat && mat.isMaterial) {
+            materials.add(mat.name || 'Material');
+            const textureProps = ['map', 'normalMap', 'roughnessMap', 'metalnessMap', 'emissiveMap', 'alphaMap', 'bumpMap', 'displacementMap', 'specularMap'];
+            textureProps.forEach(prop => {
+              if (mat[prop] && mat[prop].isTexture && mat[prop].image) {
+                textures.add(mat[prop].name || 'Texture');
               }
-            }
+            });
           }
-          if (entry) break;
-        }
-      }
-
-      if (!entry) {
-        console.warn(`❌ Texture non trouvée: ${filename}`);
-        continue;
-      }
-
-      try {
-        const blob = await entry.async('blob');
-        const url = URL.createObjectURL(blob);
-
-        const newTexture = new Texture(url, scene);
-
-        if (texture.uScale) newTexture.uScale = texture.uScale;
-        if (texture.vScale) newTexture.vScale = texture.vScale;
-        if (texture.uOffset) newTexture.uOffset = texture.uOffset;
-        if (texture.vOffset) newTexture.vOffset = texture.vOffset;
-        if (texture.wrapU !== undefined) newTexture.wrapU = texture.wrapU;
-        if (texture.wrapV !== undefined) newTexture.wrapV = texture.wrapV;
-
-        material[prop] = newTexture;
-        material.markAsDirty();
-        texturesLoaded++;
-        console.log(`✅ Texture chargée: ${filename} -> ${prop}`);
-
-      } catch (error) {
-        console.warn(`⚠️ Erreur chargement texture ${filename}:`, error);
-      }
-    }
-  }
-
-  console.log(`✅ ${texturesLoaded} textures chargées`);
-  return texturesLoaded;
-}
-
-function getSceneBoundingInfo(scene) {
-  const meshes = scene.meshes.filter(m => m.isPickable && m.getClassName() !== 'Ground' && m.getClassName() !== 'Grid');
-  if (meshes.length === 0) return null;
-
-  let minX = Infinity, minY = Infinity, minZ = Infinity;
-  let maxX = -Infinity, maxY = -Infinity, maxZ = -Infinity;
-
-  meshes.forEach(mesh => {
-    const boundingInfo = mesh.getBoundingInfo();
-    if (boundingInfo) {
-      const min = boundingInfo.minimum;
-      const max = boundingInfo.maximum;
-      if (min) {
-        minX = Math.min(minX, min.x);
-        minY = Math.min(minY, min.y);
-        minZ = Math.min(minZ, min.z);
-      }
-      if (max) {
-        maxX = Math.max(maxX, max.x);
-        maxY = Math.max(maxY, max.y);
-        maxZ = Math.max(maxZ, max.z);
+        });
       }
     }
   });
 
-  if (minX === Infinity) return null;
-
-  const center = new Vector3(
-    (minX + maxX) / 2,
-    (minY + maxY) / 2,
-    (minZ + maxZ) / 2
-  );
-
-  const radius = Math.max(
-    (maxX - minX) / 2,
-    (maxY - minY) / 2,
-    (maxZ - minZ) / 2
-  );
+  const box = new THREE.Box3().setFromObject(model);
+  const size = box.getSize(new THREE.Vector3());
+  const center = box.getCenter(new THREE.Vector3());
 
   return {
-    boundingSphere: { center, radius },
-    min: new Vector3(minX, minY, minZ),
-    max: new Vector3(maxX, maxY, maxZ)
+    vertices: Math.round(vertices),
+    triangles: Math.round(triangles),
+    meshes,
+    materials: materials.size,
+    textures: textures.size,
+    dimensions: {
+      width: size.x,
+      height: size.y,
+      depth: size.z
+    },
+    center: [center.x, center.y, center.z]
   };
 }
 
-// ============ CADRAGE DE LA CAMÉRA SUR LE MODÈLE ============
-// Centre le modèle et règle une distance de départ plus grande (vue "petite"
-// et centrée), pour laisser à l'utilisateur la liberté de zoomer ensuite.
-// Mémorise aussi cette vue dans defaultViewRef pour le bouton "Reset".
-function frameCameraOnScene(scene, camera, defaultViewRef) {
-  const boundingInfo = getSceneBoundingInfo(scene);
-  if (!boundingInfo || !camera) {
-    console.warn('⚠️ Aucune bounding box trouvée — la caméra garde sa position par défaut.');
-    return;
+function fitCameraToModel(camera, controls, model, padding = DEFAULT_CAMERA_PADDING) {
+  if (!model || !camera || !controls) return;
+
+  try {
+    const box = new THREE.Box3().setFromObject(model);
+    const size = box.getSize(new THREE.Vector3());
+    const center = box.getCenter(new THREE.Vector3());
+
+    const maxDim = Math.max(size.x, size.y, size.z);
+    let distance = Math.max(maxDim * padding, MIN_CAMERA_DISTANCE);
+    
+    if (distance > MAX_CAMERA_DISTANCE) {
+      distance = MAX_CAMERA_DISTANCE;
+    }
+
+    const position = new THREE.Vector3(
+      center.x + distance * 0.7,
+      center.y + distance * 0.5,
+      center.z + distance * 0.9
+    );
+    
+    camera.position.copy(position);
+    camera.lookAt(center);
+
+    controls.target.copy(center);
+    controls.update();
+
+    controls.minDistance = Math.max(maxDim * 0.1, 0.1);
+    controls.maxDistance = Math.max(distance * 8, 20);
+
+    return { distance, center, size };
+  } catch (error) {
+    console.warn('Erreur ajustement caméra:', error);
+    return null;
+  }
+}
+
+// ============ VALIDATION DES MATÉRIAUX ============
+
+function isValidMaterial(material) {
+  if (!material) return false;
+  if (!material.isMaterial) return false;
+  if (material.type === 'undefined' || material.type === 'null') return false;
+  return true;
+}
+
+function isValidTexture(texture) {
+  if (!texture) return false;
+  if (!texture.isTexture) return false;
+  if (!texture.image) return false;
+  if (!texture.image.width || !texture.image.height) return false;
+  return true;
+}
+
+// ============ TOKENISATION ET DICTIONNAIRE DE SYNONYMES ============
+
+// Découpe un nom de fichier (sans extension) en tokens exploitables
+function tokenizeFilename(filename) {
+  const nameWithoutExt = filename.split('.').slice(0, -1).join('.');
+  return nameWithoutExt
+    .toLowerCase()
+    .split(/[_\-.\s]+/)
+    .filter(t => t.length > 0);
+}
+
+// Dictionnaire de synonymes par type de texture PBR
+// Chaque type a une liste de tokens "forts" (match exact = fiable)
+const TEXTURE_TYPE_SYNONYMS = {
+  map:          ['basecolor', 'diffuse', 'albedo', 'color', 'col', 'base', 'diff', 'bc', 'alb'],
+  normalMap:    ['normal', 'nor', 'nrm', 'bump', 'nml', 'norm'],
+  roughnessMap: ['roughness', 'rough', 'rgh', 'rough_', 'rgn'],
+  metalnessMap: ['metallic', 'metal', 'met', 'metalness', 'mtl'],
+  emissiveMap:  ['emissive', 'emission', 'emit', 'glow', 'ems'],
+  alphaMap:     ['alpha', 'opacity', 'opac', 'mask', 'transparency'],
+  aoMap:        ['ao', 'ambient', 'occlusion', 'occ', 'ambientocclusion'],
+};
+
+// Types de textures "packées" fréquentes (ORM = Occlusion/Roughness/Metalness)
+// Un seul fichier peut légitimement remplir plusieurs canaux
+const PACKED_TEXTURE_HINTS = ['orm', 'rma', 'mra', 'arm', 'packed', 'mixmap'];
+
+function isPackedTexture(filename) {
+  const f = filename.toLowerCase();
+  return PACKED_TEXTURE_HINTS.some(hint => f.includes(hint));
+}
+
+// Score un fichier texture pour un type donné, en tenant compte
+// de TOUS les tokens du nom de fichier (pas seulement un substring)
+function scoreTextureForType(filename, contextTokens, type) {
+  const fileTokens = tokenizeFilename(filename);
+  const synonyms = TEXTURE_TYPE_SYNONYMS[type] || [];
+
+  let score = 0;
+
+  // Match exact d'un token complet = score fort (évite les faux positifs)
+  if (fileTokens.some(t => synonyms.includes(t))) {
+    score += 10;
+  } else if (fileTokens.some(ft => synonyms.some(s => ft.includes(s) || s.includes(ft)))) {
+    // Match partiel (substring dans un sens ou l'autre) = score plus faible
+    score += 3;
   }
 
-  const center = boundingInfo.boundingSphere.center;
-  const radius = boundingInfo.boundingSphere.radius || 1;
-  const distance = Math.max(radius * DEFAULT_FIT_MULTIPLIER, MIN_DEFAULT_DISTANCE);
+  if (score === 0) return 0;
 
-  camera.target = center;
-  camera.radius = distance;
-  camera.alpha = -Math.PI / 4;
-  camera.beta = Math.PI / 3;
-  camera.lowerRadiusLimit = Math.max(radius * 0.1, 0.05);
-  camera.upperRadiusLimit = distance * 8;
-
-  if (defaultViewRef) {
-    defaultViewRef.current = {
-      target: center.clone(),
-      radius: distance,
-      alpha: camera.alpha,
-      beta: camera.beta,
-    };
+  // Bonus si le nom du matériau/mesh apparaît aussi dans le nom du fichier
+  if (contextTokens.length > 0 && fileTokens.some(ft => contextTokens.includes(ft))) {
+    score += 5;
   }
 
-  console.log('📷 Caméra cadrée (vue par défaut centrée et éloignée):', {
-    target: center,
-    radius: distance,
+  return score;
+}
+
+// Résout l'assignation textures <-> types pour UN matériau donné.
+// Approche globale : on score tous les couples (texture, type) puis on
+// assigne dans l'ordre décroissant de score, en évitant les conflits.
+function resolveTextureAssignment(availableTextures, contextTokens, usedTextures, isPhong) {
+  const types = Object.keys(TEXTURE_TYPE_SYNONYMS);
+  if (isPhong) types.push('specularMap'); // specular n'est pas dans le dict standard
+  if (isPhong && !TEXTURE_TYPE_SYNONYMS.specularMap) {
+    TEXTURE_TYPE_SYNONYMS.specularMap = ['specular', 'spec', 'roughness', 'rough'];
+  }
+
+  const candidates = [];
+
+  for (const tex of availableTextures) {
+    if (usedTextures.has(tex.path)) continue; // déjà consommée par un autre matériau
+
+    for (const type of types) {
+      const score = scoreTextureForType(tex.filename, contextTokens, type);
+      if (score > 0) {
+        candidates.push({ tex, type, score, packed: isPackedTexture(tex.filename) });
+      }
+    }
+  }
+
+  // Trie par score décroissant : les meilleurs matchs sont assignés en premier
+  candidates.sort((a, b) => b.score - a.score);
+
+  const assigned = {};
+  const filesLockedForThisMaterial = new Set();
+  const typesFilled = new Set();
+
+  for (const { tex, type, score, packed } of candidates) {
+    if (typesFilled.has(type)) continue;
+
+    // Une texture "packée" (ORM etc.) ou à score faible (<5) peut être
+    // réutilisée pour un autre canal du MÊME matériau sans être verrouillée.
+    const alreadyLockedElsewhere = filesLockedForThisMaterial.has(tex.path) && !packed;
+    if (alreadyLockedElsewhere) continue;
+
+    assigned[type] = tex;
+    typesFilled.add(type);
+
+    // On ne verrouille définitivement (pour les autres matériaux) que si
+    // le match est fiable ET que ce n'est pas un fichier packé partagé.
+    if (score >= 5 && !packed) {
+      filesLockedForThisMaterial.add(tex.path);
+    }
+  }
+
+  return assigned;
+}
+
+// ============ CHARGEMENT DES TEXTURES DEPUIS LE VFS (VERSION CORRIGÉE) ============
+
+async function applyZipTexturesToThree(model, virtualFS) {
+  if (!model || !virtualFS) return 0;
+
+  let texturesLoaded = 0;
+  const availableTextures = virtualFS.getTextureFiles();
+
+  console.log('🔍 ===== TEXTURES DISPONIBLES =====');
+  availableTextures.forEach((t, index) => console.log(`  ${index + 1}. ${t.filename}`));
+  console.log('===================================\n');
+
+  const usedTextures = new Set();
+  const textureCache = new Map(); // path -> THREE.Texture (évite de recharger 2x le même fichier packé)
+
+  // Charge une texture depuis le VFS et retourne l'objet THREE.Texture (avec cache)
+  const loadTexture = async (entry) => {
+    if (textureCache.has(entry.path)) {
+      return textureCache.get(entry.path);
+    }
+
+    const blob = await virtualFS.getTextureBlob(entry.path);
+    if (!blob) return null;
+
+    const url = URL.createObjectURL(blob);
+    try {
+      const textureLoader = new THREE.TextureLoader();
+      const texture = await new Promise((resolve, reject) => {
+        textureLoader.load(url, resolve, undefined, reject);
+      });
+      textureCache.set(entry.path, texture);
+      return texture;
+    } catch (error) {
+      console.warn(`  ❌ Erreur chargement texture ${entry.filename}:`, error);
+      return null;
+    } finally {
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    }
+  };
+
+  // === RASSEMBLER MATÉRIAU + MESHES QUI L'UTILISENT ===
+  const materialEntries = [];
+  const materialIndex = new Map();
+
+  model.traverse((child) => {
+    if (child.isMesh && child.material) {
+      const mats = Array.isArray(child.material) ? child.material : [child.material];
+      mats.forEach(mat => {
+        if (!materialIndex.has(mat)) {
+          materialIndex.set(mat, materialEntries.length);
+          materialEntries.push({ material: mat, meshes: [] });
+        }
+        materialEntries[materialIndex.get(mat)].meshes.push(child);
+      });
+    }
   });
-}
 
-// ============ HELPERS D'ANIMATION CAMÉRA ============
-function normalizeAngle(angle) {
-  const twoPi = Math.PI * 2;
-  let a = angle % twoPi;
-  if (a > Math.PI) a -= twoPi;
-  if (a < -Math.PI) a += twoPi;
-  return a;
-}
+  console.log(`🔍 Traitement de ${materialEntries.length} matériaux\n`);
 
-// Trouve la cible équivalente la plus proche de "current" pour éviter
-// qu'une rotation animée ne fasse "le tour complet" inutilement.
-function shortestAngleTarget(current, target) {
-  const twoPi = Math.PI * 2;
-  let delta = (target - current) % twoPi;
-  if (delta > Math.PI) delta -= twoPi;
-  if (delta < -Math.PI) delta += twoPi;
-  return current + delta;
-}
+  for (const { material, meshes } of materialEntries) {
+    if (!material) continue;
 
-function animateCameraProperty(camera, property, toValue, frameRate = 60, durationFrames = 30) {
-  if (!camera || !camera.getScene) return;
-  const scene = camera.getScene();
-  // On retire une éventuelle animation en cours sur la même propriété
-  // pour éviter les conflits si l'utilisateur clique vite plusieurs fois.
-  const existing = scene.getAnimatableByTarget ? scene.getAnimatableByTarget(camera) : null;
-  if (existing) {
-    existing.stop(`cam_${property}`);
+    const isPhong = material.type === 'MeshPhongMaterial';
+    let targetMaterial = material;
+
+    console.log(`📦 ===== MATÉRIAU: ${material.name || 'sans nom'} (${material.type}) =====`);
+    console.log(`  - meshes utilisant ce matériau: ${meshes.map(m => m.name || '(sans nom)').join(', ')}`);
+
+    // === CONVERSION PHONG → STANDARD SI NÉCESSAIRE ===
+    if (isPhong) {
+      console.log(`🔄 Conversion de MeshPhongMaterial en MeshStandardMaterial`);
+
+      targetMaterial = new THREE.MeshStandardMaterial();
+      targetMaterial.color.copy(material.color);
+      if (material.map) targetMaterial.map = material.map;
+      if (material.emissive) targetMaterial.emissive.copy(material.emissive);
+      targetMaterial.emissiveIntensity = material.emissiveIntensity || 0;
+      targetMaterial.opacity = material.opacity ?? 1;
+      targetMaterial.transparent = material.transparent || false;
+      targetMaterial.side = material.side || THREE.FrontSide;
+      targetMaterial.name = material.name || '';
+
+      if (material.specular) {
+        const specularIntensity = material.specular.r;
+        targetMaterial.metalness = 0.0;
+        targetMaterial.roughness = Math.max(0.1, 1 - Math.min(specularIntensity * 0.8, 0.9));
+      }
+      if (material.shininess !== undefined) {
+        targetMaterial.roughness = Math.max(0.1, 1 - Math.min(material.shininess / 100, 0.9));
+      }
+      if (material.specularMap) {
+        targetMaterial.roughnessMap = material.specularMap;
+      }
+      if (material.bumpMap) {
+        targetMaterial.normalMap = material.bumpMap;
+        if (material.bumpScale !== undefined) {
+          targetMaterial.normalScale = new THREE.Vector2(material.bumpScale, material.bumpScale);
+        }
+      }
+
+      console.log(`  ✅ Matériau converti en MeshStandardMaterial`);
+    }
+
+    // === CONTEXTE DE NOM POUR LE MATCHING (tokenisé) ===
+    const materialName = targetMaterial.name || material.name || '';
+    const meshNames = meshes.map(m => m.name).filter(Boolean);
+    const contextTokens = [materialName, ...meshNames]
+      .filter(Boolean)
+      .flatMap(n => tokenizeFilename(n));
+
+    console.log(`  - tokens de contexte: [${contextTokens.join(', ') || 'aucun'}]`);
+
+    // === RÉSOLUTION GLOBALE DES TEXTURES POUR CE MATÉRIAU ===
+    const assignment = resolveTextureAssignment(
+      availableTextures,
+      contextTokens,
+      usedTextures,
+      isPhong
+    );
+
+    const pendingMaps = {};
+
+    for (const [prop, match] of Object.entries(assignment)) {
+      // Ne pas écraser une texture déjà définie nativement (GLB/MTL)
+      if (targetMaterial[prop] && targetMaterial[prop].isTexture) {
+        console.log(`    ⏭️ ${prop} déjà défini, ignoré`);
+        continue;
+      }
+
+      const texture = await loadTexture(match);
+      if (texture) {
+        pendingMaps[prop] = texture;
+        texturesLoaded++;
+        usedTextures.add(match.path);
+        console.log(`  ✅ Texture assignée: ${match.filename} -> ${prop}`);
+      } else {
+        console.log(`  ❌ Échec chargement pour ${prop} (${match.filename})`);
+      }
+    }
+
+    if (Object.keys(pendingMaps).length === 0) {
+      console.log(`  ⚠️ Aucune texture trouvée pour ce matériau`);
+    }
+
+    // Applique toutes les maps résolues en une seule fois
+    Object.assign(targetMaterial, pendingMaps);
+    targetMaterial.needsUpdate = true;
+
+    // === ASSIGNER LE MATÉRIAU AUX MESHES ===
+    // Un clone par mesh évite le crash "refreshUniformsCommon" quand un même
+    // matériau est partagé entre meshes ayant des attributs de géométrie
+    // différents (skinning, vertex colors, UV2, etc.)
+    if (meshes.length === 1) {
+      meshes[0].material = targetMaterial;
+    } else {
+      meshes.forEach(mesh => {
+        mesh.material = targetMaterial.clone();
+      });
+    }
+
+    console.log('');
   }
-  BABYLON.Animation.CreateAndStartAnimation(
-    `cam_${property}`,
-    camera,
-    property,
-    frameRate,
-    durationFrames,
-    camera[property],
-    toValue,
-    BABYLON.Animation.ANIMATIONLOOPMODE_CONSTANT
+
+  console.log(`✅ ${texturesLoaded} textures chargées au total`);
+  return texturesLoaded;
+}
+
+// ============ CHARGEMENT DU MODÈLE AVEC VFS ============
+
+async function loadModelFromZip(zipFile, virtualFS, selectedFile) {
+  let modelFile = selectedFile;
+  let modelFormat = null;
+
+  if (!modelFile) {
+    const priority = ['glb', 'gltf', 'fbx', 'obj', 'stl'];
+    for (const ext of priority) {
+      const found = Object.keys(zipFile.files).find(f => 
+        f.toLowerCase().endsWith(`.${ext}`) && !zipFile.files[f].dir
+      );
+      if (found) {
+        modelFile = found;
+        modelFormat = ext;
+        break;
+      }
+    }
+  } else {
+    const ext = modelFile.filename.split('.').pop()?.toLowerCase() || '';
+    modelFormat = ext;
+    modelFile = modelFile.path;
+  }
+
+  if (!modelFile) {
+    throw new Error('Aucun fichier modèle trouvé dans le ZIP');
+  }
+
+  console.log(`📦 Fichier modèle trouvé: ${modelFile} (${modelFormat})`);
+
+  const fileData = await zipFile.files[modelFile].async('arraybuffer');
+  const fileBlob = new Blob([fileData]);
+  const fileUrl = URL.createObjectURL(fileBlob);
+
+  try {
+    let model;
+
+    switch (modelFormat?.toLowerCase()) {
+      case 'glb':
+      case 'gltf': {
+        const loader = new GLTFLoader();
+        const gltf = await new Promise((resolve, reject) => {
+          loader.load(fileUrl, resolve, undefined, reject);
+        });
+        model = gltf.scene;
+        if (gltf.animations && gltf.animations.length > 0) {
+          model.userData.animations = gltf.animations;
+        }
+        break;
+      }
+
+      case 'fbx': {
+        const loader = new FBXLoader();
+        model = await new Promise((resolve, reject) => {
+          loader.load(fileUrl, resolve, undefined, reject);
+        });
+        break;
+      }
+
+      case 'obj': {
+        const mtlFiles = Object.keys(zipFile.files).filter(f => 
+          f.toLowerCase().endsWith('.mtl') && !zipFile.files[f].dir
+        );
+
+        if (mtlFiles.length > 0) {
+          const mtlData = await zipFile.files[mtlFiles[0]].async('string');
+          const mtlUrl = URL.createObjectURL(new Blob([mtlData]));
+          
+          const mtlLoader = new MTLLoader();
+          const materials = await new Promise((resolve, reject) => {
+            mtlLoader.load(mtlUrl, resolve, undefined, reject);
+          });
+          
+          const objLoader = new OBJLoader();
+          objLoader.setMaterials(materials);
+          
+          model = await new Promise((resolve, reject) => {
+            objLoader.load(fileUrl, resolve, undefined, reject);
+          });
+          
+          URL.revokeObjectURL(mtlUrl);
+        } else {
+          const objLoader = new OBJLoader();
+          model = await new Promise((resolve, reject) => {
+            objLoader.load(fileUrl, resolve, undefined, reject);
+          });
+        }
+        break;
+      }
+
+      case 'stl': {
+        const loader = new STLLoader();
+        const geometry = await new Promise((resolve, reject) => {
+          loader.load(fileUrl, resolve, undefined, reject);
+        });
+        const mesh = new THREE.Mesh(geometry);
+        mesh.geometry.computeVertexNormals();
+        const group = new THREE.Group();
+        group.add(mesh);
+        model = group;
+        break;
+      }
+
+      default:
+        throw new Error(`Format non supporté: ${modelFormat}`);
+    }
+
+    URL.revokeObjectURL(fileUrl);
+
+    const box = new THREE.Box3().setFromObject(model);
+    const center = box.getCenter(new THREE.Vector3());
+    model.position.sub(center);
+
+    return { model, format: modelFormat };
+
+  } catch (error) {
+    URL.revokeObjectURL(fileUrl);
+    throw error;
+  }
+}
+
+// ============ COMPOSANT D'ANIMATION ============
+
+function AnimationController({ model, onAnimationChange }) {
+  const [animations, setAnimations] = useState([]);
+  const [currentAnimation, setCurrentAnimation] = useState(null);
+  const [isPlaying, setIsPlaying] = useState(false);
+  const mixerRef = useRef(null);
+
+  useEffect(() => {
+    if (!model) return;
+
+    let anims = [];
+    if (model.userData.animations) {
+      anims = model.userData.animations;
+    } else {
+      model.traverse((child) => {
+        if (child.animations && child.animations.length > 0) {
+          anims = child.animations;
+        }
+      });
+    }
+
+    setAnimations(anims);
+    if (anims.length > 0) {
+      setCurrentAnimation(anims[0]);
+      onAnimationChange?.(anims[0]);
+    }
+  }, [model, onAnimationChange]);
+
+  const playAnimation = (animation) => {
+    if (!model) return;
+
+    if (mixerRef.current) {
+      mixerRef.current.stopAllAction();
+      mixerRef.current = null;
+    }
+
+    if (!animation) {
+      setIsPlaying(false);
+      setCurrentAnimation(null);
+      return;
+    }
+
+    mixerRef.current = new THREE.AnimationMixer(model);
+    const action = mixerRef.current.clipAction(animation);
+    action.play();
+    setCurrentAnimation(animation);
+    setIsPlaying(true);
+    onAnimationChange?.(animation);
+  };
+
+  useFrame((state, delta) => {
+    if (mixerRef.current && isPlaying) {
+      mixerRef.current.update(delta);
+    }
+  });
+
+  if (animations.length === 0) return null;
+
+  // Utilisation de Html pour les boutons d'animation (CORRECTION)
+  return (
+    <Html position={[0, 0, 0]} center>
+      <div style={{
+        position: 'absolute',
+        bottom: 80,
+        left: '50%',
+        transform: 'translateX(-50%)',
+        background: 'rgba(0,0,0,0.8)',
+        padding: '8px 12px',
+        borderRadius: 8,
+        backdropFilter: 'blur(10px)',
+        border: '1px solid rgba(255,255,255,0.1)',
+        display: 'flex',
+        gap: 8,
+        zIndex: 10,
+        whiteSpace: 'nowrap'
+      }}>
+        {animations.map((anim, index) => (
+          <button
+            key={index}
+            onClick={() => playAnimation(anim)}
+            style={{
+              padding: '4px 12px',
+              background: currentAnimation === anim && isPlaying ? '#3B82F6' : 'rgba(255,255,255,0.1)',
+              border: 'none',
+              borderRadius: 4,
+              color: '#fff',
+              cursor: 'pointer',
+              fontSize: 11,
+              transition: 'all 0.2s'
+            }}
+          >
+            {anim.name || `Anim ${index + 1}`}
+          </button>
+        ))}
+        {isPlaying && (
+          <button
+            onClick={() => playAnimation(null)}
+            style={{
+              padding: '4px 12px',
+              background: 'rgba(239,68,68,0.3)',
+              border: 'none',
+              borderRadius: 4,
+              color: '#fff',
+              cursor: 'pointer',
+              fontSize: 11
+            }}
+          >
+            ⏹ Stop
+          </button>
+        )}
+      </div>
+    </Html>
   );
 }
 
-// ============ BABYLON MODEL LOADER ============
-const BabylonModelLoader = forwardRef(function BabylonModelLoader(
+// ============ COMPOSANT DE FALLBACK ============
+
+function WebGLErrorFallback({ error, onRetry }) {
+  return (
+    <div style={{
+      display: 'flex',
+      flexDirection: 'column',
+      alignItems: 'center',
+      justifyContent: 'center',
+      height: '100%',
+      width: '100%',
+      background: '#f0f0f0',
+      color: '#333',
+      padding: '40px',
+      textAlign: 'center'
+    }}>
+      <div style={{ fontSize: 48, marginBottom: 16 }}>⚠️</div>
+      <h3 style={{ margin: '0 0 8px' }}>Erreur de rendu 3D</h3>
+      <p style={{ color: '#666', maxWidth: 400, margin: '0 0 20px' }}>
+        {error || 'Impossible d\'initialiser le contexte WebGL. Vérifiez que votre navigateur supporte WebGL.'}
+      </p>
+      <button
+        onClick={onRetry}
+        style={{
+          padding: '10px 24px',
+          background: '#3B82F6',
+          border: 'none',
+          borderRadius: 8,
+          color: '#fff',
+          cursor: 'pointer',
+          fontSize: 14,
+          fontWeight: 500
+        }}
+      >
+        🔄 Réessayer
+      </button>
+    </div>
+  );
+}
+
+// ============ NETTOYAGE DES OBJETS THREE ============
+
+function disposeThreeObject(obj) {
+  if (!obj) return;
+  
+  obj.traverse((child) => {
+    if (child.isMesh) {
+      if (child.geometry) {
+        child.geometry.dispose();
+      }
+      if (child.material) {
+        const mats = Array.isArray(child.material) ? child.material : [child.material];
+        mats.forEach(mat => {
+          if (mat && mat.isMaterial) {
+            const textureProps = ['map', 'normalMap', 'roughnessMap', 'metalnessMap', 'emissiveMap', 'alphaMap', 'bumpMap', 'displacementMap', 'specularMap'];
+            textureProps.forEach(prop => {
+              if (mat[prop] && mat[prop].isTexture) {
+                mat[prop].dispose();
+              }
+            });
+            mat.dispose();
+          }
+        });
+      }
+    }
+  });
+}
+
+// ============ COMPOSANT MODÈLE 3D ============
+
+const ThreeModelLoader = forwardRef(function ThreeModelLoader(
   { assetId, token, fileName, assetExt, onLoad, onError, selectedZipFile },
   ref
 ) {
-  const canvasRef = useRef(null);
-  const engineRef = useRef(null);
-  const sceneRef = useRef(null);
+  const [model, setModel] = useState(null);
+  const [stats, setStats] = useState(null);
+  const [isLoaded, setIsLoaded] = useState(false);
+  const [loadingProgress, setLoadingProgress] = useState(0);
+  const controlsRef = useRef(null);
   const cameraRef = useRef(null);
-  const loadAttemptedRef = useRef(false);
+  const modelRef = useRef(null);
+  const [isLoading, setIsLoading] = useState(false);
   const abortControllerRef = useRef(null);
-  const defaultViewRef = useRef(null);
-  const [isReady, setIsReady] = useState(false);
+  const [webGLError, setWebGLError] = useState(null);
+  const [retryCount, setRetryCount] = useState(0);
+  const virtualFSRef = useRef(null);
+  const [downloadError, setDownloadError] = useState(null);
+  const [canvasReady, setCanvasReady] = useState(false);
 
-  // API impérative exposée au composant parent pour piloter la caméra
-  // depuis les boutons (Face/Arrière/Gauche/Droite/Haut/Bas, zoom, reset).
   useImperativeHandle(ref, () => ({
     setView: (viewName) => {
-      const camera = cameraRef.current;
-      if (!camera) return;
+      if (!controlsRef.current || !modelRef.current || !cameraRef.current) return;
 
-      const defaults = defaultViewRef.current;
-      const radius = defaults?.radius ?? camera.radius;
+      try {
+        const box = new THREE.Box3().setFromObject(modelRef.current);
+        const center = box.getCenter(new THREE.Vector3());
+        const size = box.getSize(new THREE.Vector3());
+        const maxDim = Math.max(size.x, size.y, size.z);
+        const distance = Math.max(maxDim * 2.5, MIN_CAMERA_DISTANCE);
 
-      let targetAlphaRaw = camera.alpha;
-      let targetBeta = camera.beta;
+        let position;
+        switch (viewName) {
+          case 'front':
+            position = [center.x, center.y, center.z + distance];
+            break;
+          case 'back':
+            position = [center.x, center.y, center.z - distance];
+            break;
+          case 'left':
+            position = [center.x - distance, center.y, center.z];
+            break;
+          case 'right':
+            position = [center.x + distance, center.y, center.z];
+            break;
+          case 'top':
+            position = [center.x, center.y + distance, center.z + 0.01];
+            break;
+          case 'bottom':
+            position = [center.x, center.y - distance, center.z + 0.01];
+            break;
+          default:
+            return;
+        }
 
-      switch (viewName) {
-        case 'front':
-          targetAlphaRaw = -Math.PI / 2;
-          targetBeta = Math.PI / 2;
-          break;
-        case 'back':
-          targetAlphaRaw = Math.PI / 2;
-          targetBeta = Math.PI / 2;
-          break;
-        case 'left':
-          targetAlphaRaw = Math.PI;
-          targetBeta = Math.PI / 2;
-          break;
-        case 'right':
-          targetAlphaRaw = 0;
-          targetBeta = Math.PI / 2;
-          break;
-        case 'top':
-          targetBeta = 0.0001;
-          break;
-        case 'bottom':
-          targetBeta = Math.PI - 0.0001;
-          break;
-        default:
-          return;
+        controlsRef.current.target.copy(center);
+        cameraRef.current.position.set(position[0], position[1], position[2]);
+        cameraRef.current.lookAt(center);
+        controlsRef.current.update();
+      } catch (error) {
+        console.warn('Erreur setView:', error);
       }
-
-      const currentAlpha = normalizeAngle(camera.alpha);
-      const targetAlpha = shortestAngleTarget(currentAlpha, targetAlphaRaw);
-
-      animateCameraProperty(camera, 'alpha', targetAlpha);
-      animateCameraProperty(camera, 'beta', targetBeta);
-      animateCameraProperty(camera, 'radius', radius);
     },
 
     zoomIn: () => {
-      const camera = cameraRef.current;
-      if (!camera) return;
-      const lower = camera.lowerRadiusLimit ?? 0.05;
-      const upper = camera.upperRadiusLimit ?? camera.radius;
-      const newRadius = BABYLON.Scalar.Clamp(camera.radius * 0.7, lower, upper);
-      animateCameraProperty(camera, 'radius', newRadius);
+      if (!controlsRef.current || !cameraRef.current) return;
+      try {
+        const currentPos = cameraRef.current.position.clone();
+        const target = controlsRef.current.target.clone();
+        const direction = currentPos.clone().sub(target).normalize();
+        const newPos = currentPos.clone().sub(direction.multiplyScalar(currentPos.distanceTo(target) * 0.15));
+        cameraRef.current.position.copy(newPos);
+        controlsRef.current.update();
+      } catch (error) {
+        console.warn('Erreur zoomIn:', error);
+      }
     },
 
     zoomOut: () => {
-      const camera = cameraRef.current;
-      if (!camera) return;
-      const lower = camera.lowerRadiusLimit ?? 0.05;
-      const upper = camera.upperRadiusLimit ?? camera.radius * 1.4;
-      const newRadius = BABYLON.Scalar.Clamp(camera.radius * 1.4, lower, upper);
-      animateCameraProperty(camera, 'radius', newRadius);
+      if (!controlsRef.current || !cameraRef.current) return;
+      try {
+        const currentPos = cameraRef.current.position.clone();
+        const target = controlsRef.current.target.clone();
+        const direction = currentPos.clone().sub(target).normalize();
+        const newPos = currentPos.clone().add(direction.multiplyScalar(currentPos.distanceTo(target) * 0.15));
+        cameraRef.current.position.copy(newPos);
+        controlsRef.current.update();
+      } catch (error) {
+        console.warn('Erreur zoomOut:', error);
+      }
     },
 
     resetView: () => {
-      const camera = cameraRef.current;
-      const defaults = defaultViewRef.current;
-      if (!camera || !defaults) return;
-
-      camera.target = defaults.target.clone();
-      const currentAlpha = normalizeAngle(camera.alpha);
-      const targetAlpha = shortestAngleTarget(currentAlpha, defaults.alpha);
-
-      animateCameraProperty(camera, 'alpha', targetAlpha);
-      animateCameraProperty(camera, 'beta', defaults.beta);
-      animateCameraProperty(camera, 'radius', defaults.radius);
+      if (!controlsRef.current || !modelRef.current || !cameraRef.current) return;
+      fitCameraToModel(cameraRef.current, controlsRef.current, modelRef.current, DEFAULT_CAMERA_PADDING);
     },
   }), []);
 
-  // Initialiser le moteur et la scène
-  useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
+  const handleModelLoaded = useCallback((modelData, texturesLoaded = 0) => {
+    try {
+      setModel(modelData);
+      modelRef.current = modelData;
+      setIsLoaded(true);
+      
+      const modelStats = calculateModelStats(modelData);
+      setStats(modelStats);
 
-    const abortController = new AbortController();
-    abortControllerRef.current = abortController;
-    let isMounted = true;
-    let engine = null;
-    let scene = null;
-    let animationId = null;
+      console.log(`📊 Statistiques du modèle:`, modelStats);
+      console.log(`🖼️ ${texturesLoaded} textures appliquées`);
 
-    const initScene = async () => {
-      try {
-        // Créer le moteur Babylon
-        engine = new Engine(canvas, true, {
-          preserveDrawingBuffer: true,
-          stencil: true,
-          antialiasing: true,
-        });
-        engineRef.current = engine;
-
-        // Créer la scène
-        scene = new Scene(engine);
-        sceneRef.current = scene;
-
-         scene.clearColor = new Color3(0.9, 0.9, 0.9); // RGB (230, 230, 230)
-
-        // Configurer la caméra
-        const camera = new ArcRotateCamera(
-          "camera",
-          -Math.PI / 4,
-          Math.PI / 3,
-          10,
-          new Vector3(0, 0, 0),
-          scene
-        );
-        camera.attachControl(canvas, true);
-        camera.wheelPrecision = 50;
-        camera.minZ = 0.1;
-        camera.maxZ = 1000;
-        cameraRef.current = camera;
-
-        // Lumières
-        const hemiLight = new HemisphericLight("hemiLight", new Vector3(0, 1, 0), scene);
-        hemiLight.intensity = 0.8;
-
-        const dirLight = new DirectionalLight("dirLight", new Vector3(-1, -1, -1), scene);
-        dirLight.intensity = 1.2;
-        dirLight.position = new Vector3(5, 5, 5);
-
-        const shadowGenerator = new ShadowGenerator(1024, dirLight);
-
- 
-
-        setIsReady(true);
-
-        // Démarrer le rendu
-        const renderLoop = () => {
-          if (scene && engine && isMounted && !abortController.signal.aborted) {
-            scene.render();
-            animationId = requestAnimationFrame(renderLoop);
+      setTimeout(() => {
+        try {
+          if (cameraRef.current && controlsRef.current && modelData) {
+            fitCameraToModel(cameraRef.current, controlsRef.current, modelData, DEFAULT_CAMERA_PADDING);
           }
-        };
-        renderLoop();
-
-        // Redimensionnement
-        const handleResize = () => {
-          if (engine && isMounted && !abortController.signal.aborted) {
-            engine.resize();
-          }
-        };
-        window.addEventListener('resize', handleResize);
-
-        // Nettoyage
-        return () => {
-          isMounted = false;
-          abortController.abort();
-          if (animationId) cancelAnimationFrame(animationId);
-          window.removeEventListener('resize', handleResize);
-          if (engine) {
-            engine.dispose();
-          }
-          if (scene) {
-            scene.dispose();
-          }
-        };
-
-      } catch (err) {
-        console.error('Erreur initialisation Babylon:', err);
-        onError?.(err);
-      }
-    };
-
-    initScene();
-
-  }, []);
-
-  // Charger le modèle une fois que la scène est prête
-  useEffect(() => {
-    if (!isReady || !sceneRef.current || !canvasRef.current) return;
-
-    const abortController = abortControllerRef.current;
-    let isMounted = true;
-    let scene = sceneRef.current;
-    let camera = cameraRef.current;
-
-    const loadModel = async () => {
-      if (!scene || loadAttemptedRef.current) return;
-      loadAttemptedRef.current = true;
-
-      try {
-        if (abortController?.signal.aborted || !isMounted) {
-          console.warn("Chargement annulé");
-          return;
+        } catch (error) {
+          console.warn('Erreur ajustement caméra:', error);
         }
+      }, 100);
 
-        // Télécharger le fichier
-        const url = `${API_BASE_URL}/assets/${assetId}/download`;
+      onLoad?.();
+    } catch (error) {
+      console.error('Erreur handleModelLoaded:', error);
+      setWebGLError(error.message);
+      onError?.(error);
+    }
+  }, [onLoad, onError]);
+
+  const handleWebGLError = useCallback((error) => {
+    console.error('WebGL Error:', error);
+    setWebGLError(error.message || 'Erreur de rendu 3D');
+    setIsLoading(false);
+    onError?.(error);
+  }, [onError]);
+
+  const downloadAsset = useCallback(async (assetId, token, retries = 3) => {
+    let lastError = null;
+    
+    for (let attempt = 1; attempt <= retries; attempt++) {
+      try {
+        const timestamp = Date.now();
+        const random = Math.random().toString(36).substring(2, 8);
+        const url = `${API_BASE_URL}/assets/${assetId}/download?nocache=${timestamp}_${random}`;
+        console.log(`🔄 Tentative ${attempt}/${retries}: ${url}`);
+        
         const response = await fetch(url, {
           method: 'GET',
-          headers: { 'Authorization': `Bearer ${token}` }
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Accept': '*/*',
+            'Cache-Control': 'no-cache, no-store, must-revalidate, max-age=0',
+            'Pragma': 'no-cache',
+            'Expires': '0',
+            'If-None-Match': '',
+            'If-Modified-Since': 'Thu, 01 Jan 1970 00:00:00 GMT'
+          },
+          signal: AbortSignal.timeout(30000)
         });
 
-        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        if (response.status === 304) {
+          console.warn(`⚠️ 304 Not Modified, nouvelle tentative...`);
+          continue;
+        }
+
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
 
         const blob = await response.blob();
-
-        if (abortController?.signal.aborted || !isMounted) {
-          console.warn("Chargement annulé après téléchargement.");
-          return;
+        
+        if (blob.size === 0) {
+          throw new Error('Le fichier téléchargé est vide');
         }
+
+        console.log(`✅ Téléchargement réussi (${(blob.size / 1024 / 1024).toFixed(2)} MB)`);
+        return blob;
+
+      } catch (error) {
+        lastError = error;
+        console.warn(`❌ Tentative ${attempt} échouée:`, error.message);
+        
+        if (attempt < retries) {
+          const delay = Math.min(1000 * Math.pow(2, attempt - 1), 8000);
+          console.log(`Nouvelle tentative dans ${delay}ms...`);
+          await new Promise(resolve => setTimeout(resolve, delay));
+        }
+      }
+    }
+
+    throw lastError || new Error('Échec du téléchargement après plusieurs tentatives');
+  }, []);
+
+  const handleRetry = useCallback(() => {
+    if (modelRef.current) {
+      disposeThreeObject(modelRef.current);
+      modelRef.current = null;
+    }
+    setModel(null);
+    setStats(null);
+    setIsLoaded(false);
+    setWebGLError(null);
+    setDownloadError(null);
+    setRetryCount(prev => prev + 1);
+  }, []);
+
+  useEffect(() => {
+    if (!assetId || !token) {
+      setDownloadError('ID d\'asset ou token manquant');
+      return;
+    }
+
+    const loadModel = async () => {
+      setIsLoading(true);
+      setLoadingProgress(0);
+      setWebGLError(null);
+      setDownloadError(null);
+
+      try {
+        const blob = await downloadAsset(assetId, token);
 
         let ext = '';
         if (assetExt) ext = assetExt.toLowerCase().replace(/^\./, '');
@@ -599,240 +1060,278 @@ const BabylonModelLoader = forwardRef(function BabylonModelLoader(
           ext = fileName.split('.').pop()?.toLowerCase() || '';
         }
 
-        // === SUPPORT ZIP ===
         if (ext === 'zip') {
           try {
-            const zip = await JSZip.loadAsync(blob);
-
-            if (abortController?.signal.aborted || !isMounted) {
-              console.warn("Chargement annulé après extraction ZIP.");
-              return;
-            }
-
+            console.log('📦 Décompression du ZIP...');
+            const zipFile = await JSZip.loadAsync(blob);
+            
             const virtualFS = new VirtualFileSystem();
-            zip.forEach((relativePath, file) => {
+            zipFile.forEach((relativePath, file) => {
               if (!file.dir) {
                 virtualFS.addFile(relativePath, file);
               }
             });
+            virtualFSRef.current = virtualFS;
 
             console.log('📁 Fichiers dans le ZIP:');
             const allFiles = virtualFS.getAllFiles();
             allFiles.forEach(path => console.log(`  - ${path}`));
 
-            const files = [];
-            zip.forEach((relativePath, file) => {
-              if (!file.dir) {
-                const filename = relativePath.split('/').pop();
-                const extFile = filename.split('.').pop().toLowerCase();
-                files.push({
-                  filename: filename,
-                  path: relativePath,
-                  extension: extFile,
-                  file: file
-                });
-              }
-            });
-
             let selectedFile = null;
             if (selectedZipFile) {
-              selectedFile = files.find(f => f.filename === selectedZipFile.filename);
+              selectedFile = virtualFS.files.has(selectedZipFile.path) ? selectedZipFile : null;
             }
 
-            if (!selectedFile) {
-              const priority = ['glb', 'gltf', 'fbx', 'obj'];
-              for (const extType of priority) {
-                const found = files.find(f => f.extension === extType);
-                if (found) {
-                  selectedFile = found;
-                  break;
-                }
-              }
-            }
+            const { model: modelData, format } = await loadModelFromZip(zipFile, virtualFS, selectedFile);
 
-            if (selectedFile) {
-              const fileData = await selectedFile.file.async('arraybuffer');
-              const fileBlob = new Blob([fileData]);
-              const fileUrl = URL.createObjectURL(fileBlob);
+            const texturesLoaded = await applyZipTexturesToThree(modelData, virtualFS);
 
-              if (abortController?.signal.aborted || !isMounted) {
-                console.warn("Chargement annulé avant chargement du modèle.");
-                URL.revokeObjectURL(fileUrl);
-                return;
-              }
+            handleModelLoaded(modelData, texturesLoaded);
 
-              console.log(`🔄 Chargement du modèle: ${selectedFile.filename}`);
-
-              // pluginExtension est le 5e paramètre de LoadAssetContainerAsync
-              // (rootUrl, sceneFilename, scene, onProgress, pluginExtension),
-              // sous forme de string avec le point (ex: '.fbx').
-              const pluginExt = '.' + (selectedFile.extension || 'fbx');
-
-              const result = await SceneLoader.LoadAssetContainerAsync(
-                "",
-                fileUrl,
-                scene,
-                (progress) => {
-                  if (progress.total && isMounted && !abortController?.signal.aborted) {
-                    const pct = ((progress.loaded / progress.total) * 100).toFixed(2);
-                    console.log(`Chargement: ${pct}%`);
-                  }
-                },
-                pluginExt
-              );
-
-              if (abortController?.signal.aborted || !isMounted) {
-                console.warn("Chargement annulé après chargement du modèle.");
-                URL.revokeObjectURL(fileUrl);
-                return;
-              }
-
-              result.addAllToScene();
-
-              // Debug : confirmer que des meshes ont bien été ajoutés à la scène
-              console.log(
-                '🧩 Meshes après chargement:',
-                scene.meshes.length,
-                scene.meshes.map(m => m.name)
-              );
-
-              console.log('🔄 Application des textures...');
-
-              await applyZipTexturesToSceneBabylon(scene, virtualFS, abortController?.signal);
-
-              if (abortController?.signal.aborted || !isMounted) {
-                console.warn("Chargement annulé après application des textures.");
-                URL.revokeObjectURL(fileUrl);
-                return;
-              }
-
-              frameCameraOnScene(scene, camera, defaultViewRef);
-
-              if (isMounted && !abortController?.signal.aborted) {
-                onLoad?.();
-              }
-
-              URL.revokeObjectURL(fileUrl);
-            } else {
-              if (isMounted && !abortController?.signal.aborted) {
-                onError?.(new Error('Aucun fichier modèle trouvé dans le ZIP'));
-              }
-            }
-            return;
           } catch (zipError) {
-            console.error('Erreur chargement ZIP:', zipError);
-            if (isMounted && !abortController?.signal.aborted) {
-              onError?.(zipError);
-            }
-            return;
+            console.error('Erreur extraction ZIP:', zipError);
+            setDownloadError(`Erreur ZIP: ${zipError.message}`);
+            handleWebGLError(zipError);
           }
+          setIsLoading(false);
+          return;
         }
 
-        // === AUTRES FORMATS (fichier direct, hors ZIP) ===
         console.log(`🔄 Chargement du fichier: ${fileName}`);
         const fileUrl = URL.createObjectURL(blob);
 
-        if (abortController?.signal.aborted || !isMounted) {
-          console.warn("Chargement annulé avant chargement du modèle.");
-          URL.revokeObjectURL(fileUrl);
-          return;
-        }
+        try {
+          let modelData;
 
-        // Même correctif ici : pluginExtension en 5e position, avec le point.
-        const pluginExt = '.' + (ext || 'fbx');
-
-        const result = await SceneLoader.LoadAssetContainerAsync(
-          "",
-          fileUrl,
-          scene,
-          (progress) => {
-            if (progress.total && isMounted && !abortController?.signal.aborted) {
-              const pct = ((progress.loaded / progress.total) * 100).toFixed(2);
-              console.log(`Chargement: ${pct}%`);
+          switch (ext) {
+            case 'glb':
+            case 'gltf': {
+              const loader = new GLTFLoader();
+              const gltf = await new Promise((resolve, reject) => {
+                loader.load(fileUrl, resolve, (xhr) => {
+                  if (xhr.total) {
+                    setLoadingProgress((xhr.loaded / xhr.total) * 100);
+                  }
+                }, reject);
+              });
+              modelData = gltf.scene;
+              if (gltf.animations && gltf.animations.length > 0) {
+                modelData.userData.animations = gltf.animations;
+              }
+              break;
             }
-          },
-          pluginExt
-        );
 
-        if (abortController?.signal.aborted || !isMounted) {
-          console.warn("Chargement annulé après chargement du modèle.");
+            case 'fbx': {
+              const loader = new FBXLoader();
+              modelData = await new Promise((resolve, reject) => {
+                loader.load(fileUrl, resolve, (xhr) => {
+                  if (xhr.total) {
+                    setLoadingProgress((xhr.loaded / xhr.total) * 100);
+                  }
+                }, reject);
+              });
+              break;
+            }
+
+            case 'obj': {
+              const loader = new OBJLoader();
+              modelData = await new Promise((resolve, reject) => {
+                loader.load(fileUrl, resolve, (xhr) => {
+                  if (xhr.total) {
+                    setLoadingProgress((xhr.loaded / xhr.total) * 100);
+                  }
+                }, reject);
+              });
+              break;
+            }
+
+            case 'stl': {
+              const loader = new STLLoader();
+              const geometry = await new Promise((resolve, reject) => {
+                loader.load(fileUrl, resolve, (xhr) => {
+                  if (xhr.total) {
+                    setLoadingProgress((xhr.loaded / xhr.total) * 100);
+                  }
+                }, reject);
+              });
+              const mesh = new THREE.Mesh(geometry);
+              mesh.geometry.computeVertexNormals();
+              const group = new THREE.Group();
+              group.add(mesh);
+              modelData = group;
+              break;
+            }
+
+            default:
+              throw new Error(`Format non supporté: ${ext}`);
+          }
+
+          const box = new THREE.Box3().setFromObject(modelData);
+          const center = box.getCenter(new THREE.Vector3());
+          modelData.position.sub(center);
+
+          handleModelLoaded(modelData);
+
+        } catch (loadError) {
+          console.error('Erreur chargement:', loadError);
+          setDownloadError(`Erreur chargement: ${loadError.message}`);
+          handleWebGLError(loadError);
+        } finally {
           URL.revokeObjectURL(fileUrl);
-          return;
         }
 
-        result.addAllToScene();
-
-        // Debug : confirmer que des meshes ont bien été ajoutés à la scène
-        console.log(
-          '🧩 Meshes après chargement:',
-          scene.meshes.length,
-          scene.meshes.map(m => m.name)
-        );
-
-        frameCameraOnScene(scene, camera, defaultViewRef);
-
-        if (isMounted && !abortController?.signal.aborted) {
-          onLoad?.();
-        }
-
-        URL.revokeObjectURL(fileUrl);
+        setIsLoading(false);
 
       } catch (err) {
-        console.error('Erreur chargement:', err);
-        if (isMounted && !abortController?.signal.aborted) {
-          onError?.(err);
-        }
+        console.error('Erreur téléchargement:', err);
+        setDownloadError(err.message || 'Erreur de téléchargement du fichier');
+        setIsLoading(false);
+        onError?.(err);
       }
     };
 
     loadModel();
 
     return () => {
-      isMounted = false;
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+      }
+      if (virtualFSRef.current) {
+        virtualFSRef.current.dispose();
+      }
+      if (modelRef.current) {
+        disposeThreeObject(modelRef.current);
+        modelRef.current = null;
+      }
     };
-  }, [isReady, assetId, token, fileName, assetExt, selectedZipFile, onLoad, onError]);
+  }, [assetId, token, fileName, assetExt, selectedZipFile, handleModelLoaded, handleWebGLError, downloadAsset]);
+
+  if (webGLError || downloadError) {
+    return <WebGLErrorFallback error={downloadError || webGLError} onRetry={handleRetry} />;
+  }
 
   return (
-    <canvas
-      ref={canvasRef}
-      style={{
-        width: '100%',
-        height: '100%',
-        display: 'block',
-        background: '#1a1a1a'
-      }}
-    />
+    <div style={{ width: '100%', height: '100%', position: 'relative', background: '#f0f0f0' }}>
+      <Canvas
+        key={`canvas-${retryCount}`}
+        camera={{ position: [8, 6, 10], fov: 45 }}
+        style={{ 
+          background: '#f0f0f0',
+          width: '100%',
+          height: '100%',
+          display: 'block'
+        }}
+        onCreated={({ camera, scene, gl }) => {
+          cameraRef.current = camera;
+          scene.background = new THREE.Color('#f0f0f0');
+          gl.setClearColor('#f0f0f0');
+          setCanvasReady(true);
+        }}
+        onError={(error) => {
+          console.error('Canvas error:', error);
+          handleWebGLError(error);
+        }}
+        gl={{ 
+          antialias: true,
+          alpha: false,
+          powerPreference: "default",
+          stencil: false,
+          depth: true,
+          failIfMajorPerformanceCaveat: false,
+          clearColor: '#f0f0f0'
+        }}
+        frameloop="demand"
+      >
+        <ambientLight intensity={0.6} />
+        <directionalLight position={[10, 10, 10]} intensity={1.5} castShadow />
+        <directionalLight position={[-10, 5, -10]} intensity={0.5} />
+        <hemisphereLight intensity={0.4} color="#ffffff" groundColor="#e0e0e0" />
+
+        <Environment preset="apartment" background={false} />
+
+        <Suspense fallback={null}>
+          {model && <primitive object={model} />}
+        </Suspense>
+
+        {model && <AnimationController model={model} />}
+
+        <OrbitControls
+          ref={controlsRef}
+          enablePan
+          enableZoom
+          enableRotate
+          minDistance={0.5}
+          maxDistance={100}
+          zoomSpeed={1.2}
+          rotateSpeed={0.8}
+          makeDefault
+        />
+      </Canvas>
+
+      {isLoading && (
+        <div style={{
+          position: 'absolute',
+          top: '50%',
+          left: '50%',
+          transform: 'translate(-50%, -50%)',
+          color: '#333',
+          textAlign: 'center',
+          zIndex: 5,
+          background: 'rgba(255,255,255,0.9)',
+          padding: '20px 30px',
+          borderRadius: 16,
+          backdropFilter: 'blur(10px)',
+          boxShadow: '0 4px 20px rgba(0,0,0,0.1)'
+        }}>
+          <div style={{
+            width: 40,
+            height: 40,
+            border: '3px solid rgba(0,0,0,0.1)',
+            borderTopColor: '#3B82F6',
+            borderRadius: '50%',
+            animation: 'spin 1s linear infinite',
+            margin: '0 auto 12px'
+          }} />
+          <div style={{ color: '#666' }}>Chargement... {Math.round(loadingProgress)}%</div>
+        </div>
+      )}
+
+      {isLoaded && stats && (
+        <div style={{
+          position: 'absolute',
+          bottom: 16,
+          right: 16,
+          background: 'rgba(0,0,0,0.75)',
+          padding: '8px 12px',
+          borderRadius: 8,
+          color: '#fff',
+          fontSize: 11,
+          fontFamily: 'monospace',
+          backdropFilter: 'blur(10px)',
+          border: '1px solid rgba(255,255,255,0.1)',
+          zIndex: 5
+        }}>
+          <div>Sommets: {stats.vertices.toLocaleString()}</div>
+          <div>Triangles: {stats.triangles.toLocaleString()}</div>
+          <div>Matériaux: {stats.materials}</div>
+          <div>Textures: {stats.textures}</div>
+          <div style={{ color: '#3B82F6', fontSize: 10 }}>
+            {stats.dimensions.width.toFixed(2)} × {stats.dimensions.height.toFixed(2)} × {stats.dimensions.depth.toFixed(2)}
+          </div>
+        </div>
+      )}
+
+      <style>{`
+        @keyframes spin {
+          from { transform: rotate(0deg); }
+          to { transform: rotate(360deg); }
+        }
+      `}</style>
+    </div>
   );
 });
 
-// ============ BOUTON DE CONTRÔLE CAMÉRA (UI) ============
-function CameraControlButton({ onClick, title, children, primary }) {
-  return (
-    <button
-      onClick={onClick}
-      title={title}
-      style={{
-        width: 40,
-        height: 36,
-        background: primary ? 'rgba(59,130,246,0.25)' : 'rgba(255,255,255,0.08)',
-        border: primary ? '1px solid rgba(59,130,246,0.5)' : '1px solid rgba(255,255,255,0.15)',
-        borderRadius: 8,
-        color: '#fff',
-        cursor: 'pointer',
-        fontSize: 12,
-        fontWeight: 500,
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        transition: 'background 0.15s',
-      }}
-      onMouseEnter={(e) => { e.currentTarget.style.background = primary ? 'rgba(59,130,246,0.4)' : 'rgba(255,255,255,0.18)'; }}
-      onMouseLeave={(e) => { e.currentTarget.style.background = primary ? 'rgba(59,130,246,0.25)' : 'rgba(255,255,255,0.08)'; }}
-    >
-      {children}
-    </button>
-  );
-}
+// ============ COMPOSANT DE CONTRÔLES CAMÉRA (CORRIGÉ) ============
 
 function CameraControlsPanel({ viewerRef, visible }) {
   if (!visible) return null;
@@ -844,9 +1343,9 @@ function CameraControlsPanel({ viewerRef, visible }) {
       position: 'absolute',
       bottom: 16,
       left: 16,
-      background: 'rgba(0,0,0,0.75)',
+      background: 'rgba(0, 0, 0, 0.9)',
       backdropFilter: 'blur(10px)',
-      border: '1px solid rgba(255,255,255,0.1)',
+      border: '1px solid rgba(0,0,0,0.1)',
       borderRadius: 12,
       padding: 12,
       display: 'flex',
@@ -854,39 +1353,66 @@ function CameraControlsPanel({ viewerRef, visible }) {
       gap: 8,
       zIndex: 15,
       userSelect: 'none',
+      boxShadow: '0 4px 12px rgba(0,0,0,0.1)',
     }}>
-      <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.5)', letterSpacing: 0.5 }}>
+      <div style={{ fontSize: 10, color: 'rgb(255, 255, 255)', letterSpacing: 0.5 }}>
         VUE CAMÉRA
       </div>
 
-      {/* Vues orthogonales */}
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 6 }}>
-        <CameraControlButton title="Face" onClick={() => call('setView', 'front')}>Face</CameraControlButton>
-        <CameraControlButton title="Arrière" onClick={() => call('setView', 'back')}>Arr.</CameraControlButton>
-        <CameraControlButton title="Dessus" onClick={() => call('setView', 'top')}>⬆ Haut</CameraControlButton>
-        <CameraControlButton title="Gauche" onClick={() => call('setView', 'left')}>Gauche</CameraControlButton>
-        <CameraControlButton title="Droite" onClick={() => call('setView', 'right')}>Droite</CameraControlButton>
-        <CameraControlButton title="Dessous" onClick={() => call('setView', 'bottom')}>⬇ Bas</CameraControlButton>
+        <button onClick={() => call('setView', 'front')} style={buttonStyleLight}>Face</button>
+        <button onClick={() => call('setView', 'back')} style={buttonStyleLight}>Arr.</button>
+        <button onClick={() => call('setView', 'top')} style={buttonStyleLight}>Haut</button>
+        <button onClick={() => call('setView', 'left')} style={buttonStyleLight}>Gauche</button>
+        <button onClick={() => call('setView', 'right')} style={buttonStyleLight}>Droite</button>
+        <button onClick={() => call('setView', 'bottom')} style={buttonStyleLight}>Bas</button>
       </div>
 
-      {/* Zoom + reset */}
       <div style={{ display: 'flex', gap: 6, marginTop: 4 }}>
-        <CameraControlButton title="Zoom -" onClick={() => call('zoomOut')}>−</CameraControlButton>
-        <CameraControlButton title="Recentrer la vue" primary onClick={() => call('resetView')}>⌂</CameraControlButton>
-        <CameraControlButton title="Zoom +" onClick={() => call('zoomIn')}>+</CameraControlButton>
+        <button onClick={() => call('zoomOut')} style={{ ...buttonStyleLight, flex: 1 }}>−</button>
+        <button onClick={() => call('resetView')} style={{ ...buttonStyleLight, background: 'rgba(59,130,246,0.15)', flex: 1 }}>⌂</button>
+        <button onClick={() => call('zoomIn')} style={{ ...buttonStyleLight, flex: 1 }}>+</button>
       </div>
     </div>
   );
 }
 
+const buttonStyleLight = {
+  width: 40,
+  height: 36,
+  background: 'rgba(255,255,255,0.05)',
+  border: '1px solid rgba(255,255,255,0.1)',
+  borderRadius: 8,
+  color: '#fff',
+  cursor: 'pointer',
+  fontSize: 12,
+  fontWeight: 500,
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  transition: 'background 0.15s',
+};
+
 // ============ COMPOSANT PRINCIPAL ============
-export default function ModelViewerBabylon({ assetId, assetName, token, assetExt, assetData, onClose, selectedZipFile }) {
+
+export default function ModelViewerThree({ 
+  assetId, 
+  assetName, 
+  token, 
+  assetExt, 
+  assetData, 
+  onClose, 
+  selectedZipFile 
+}) {
   const [error, setError] = useState(null);
   const [fileName, setFileName] = useState('');
   const [loading, setLoading] = useState(true);
   const [assetInfo, setAssetInfo] = useState(assetData || null);
   const [modelLoaded, setModelLoaded] = useState(false);
   const viewerRef = useRef(null);
+  const [webGLError, setWebGLError] = useState(null);
+  const [retryCount, setRetryCount] = useState(0);
+  const [downloadError, setDownloadError] = useState(null);
 
   useEffect(() => {
     const fetchAssetInfo = async () => {
@@ -930,15 +1456,28 @@ export default function ModelViewerBabylon({ assetId, assetName, token, assetExt
     console.log('✅ Modèle chargé avec succès');
     setModelLoaded(true);
     setLoading(false);
+    setWebGLError(null);
+    setDownloadError(null);
   };
 
   const handleModelError = (err) => {
     console.error('Model error:', err);
+    if (err.message?.includes('WebGL')) {
+      setWebGLError(err.message);
+    } else if (err.message?.includes('HTTP') || err.message?.includes('fetch')) {
+      setDownloadError(err.message);
+    }
     setError(err.message || 'Erreur de chargement du modèle');
     setLoading(false);
   };
 
-  const shouldLoadModel = !loading && fileName && fileName !== '';
+  const handleRetry = () => {
+    setError(null);
+    setWebGLError(null);
+    setDownloadError(null);
+    setLoading(true);
+    setRetryCount(prev => prev + 1);
+  };
 
   return (
     <div style={{
@@ -947,32 +1486,33 @@ export default function ModelViewerBabylon({ assetId, assetName, token, assetExt
       left: 0,
       right: 0,
       bottom: 0,
-      background: '#000',
+      background: '#000000',
       zIndex: 2000,
       display: 'flex',
       flexDirection: 'column'
     }}>
+      {/* Header */}
       <div style={{
         padding: '16px 24px',
-        background: 'rgba(0, 0, 0, 0.8)',
+        background: 'rgba(0, 0, 0, 0.9)',
         backdropFilter: 'blur(10px)',
-        borderBottom: '1px solid rgba(255,255,255,0.1)',
+        borderBottom: '1px solid rgba(0,0,0,0.1)',
         display: 'flex',
         justifyContent: 'space-between',
         alignItems: 'center',
       }}>
         <div>
           <h3 style={{ margin: 0, color: '#fff' }}>
-            {assetExt?.toLowerCase() === 'zip' ? '📦 Modèle ZIP' : 'Visualisation 3D (Babylon.js)'}
+            {assetExt?.toLowerCase() === 'zip' ? '📦 Modèle ZIP' : 'Visualisation 3D'}
           </h3>
-          <p style={{ margin: '4px 0 0', fontSize: 12, color: 'rgba(255,255,255,0.7)' }}>
+          <p style={{ margin: '4px 0 0', fontSize: 12, color: 'rgba(241, 235, 235, 0.6)' }}>
             {assetInfo?.title || assetName || 'Modèle 3D'}
           </p>
         </div>
         <button onClick={onClose} style={{
-          background: 'rgba(255,255,255,0.1)',
+          background: 'rgb(255, 255, 255)',
           border: 'none',
-          color: '#fff',
+          color: '#ff0000',
           fontSize: 24,
           cursor: 'pointer',
           width: 40,
@@ -986,10 +1526,11 @@ export default function ModelViewerBabylon({ assetId, assetName, token, assetExt
         </button>
       </div>
 
+      {/* Viewer */}
       <div style={{ flex: 1, display: 'flex', overflow: 'hidden', position: 'relative' }}>
-        <div style={{ flex: 1, position: 'relative', background: '#1a1a1a' }}>
-          <BabylonModelLoader
-            key={assetId + (selectedZipFile?.filename || '')}
+        <div style={{ flex: 1, position: 'relative', background: '#f0f0f0' }}>
+          <ThreeModelLoader
+            key={assetId + (selectedZipFile?.filename || '') + retryCount}
             ref={viewerRef}
             assetId={assetId}
             token={token}
@@ -1000,65 +1541,65 @@ export default function ModelViewerBabylon({ assetId, assetName, token, assetExt
             selectedZipFile={selectedZipFile}
           />
 
-          {/* Panneau de contrôle caméra : visible une fois le modèle chargé */}
-          <CameraControlsPanel viewerRef={viewerRef} visible={modelLoaded && !error} />
+          <CameraControlsPanel viewerRef={viewerRef} visible={modelLoaded && !error && !webGLError && !downloadError} />
 
-          {/* Overlay de chargement */}
           {loading && (
             <div style={{
               position: 'absolute',
               top: '50%',
               left: '50%',
               transform: 'translate(-50%, -50%)',
-              color: '#fff',
+              color: '#333',
               textAlign: 'center',
-              background: 'rgba(0,0,0,0.8)',
+              background: 'rgba(255,255,255,0.9)',
               padding: '20px 30px',
               borderRadius: 16,
               backdropFilter: 'blur(10px)',
-              zIndex: 10
+              zIndex: 10,
+              boxShadow: '0 4px 20px rgba(0,0,0,0.1)'
             }}>
               <div style={{
                 width: 40,
                 height: 40,
-                border: '3px solid rgba(231, 235, 241, 0.3)',
+                border: '3px solid rgba(0,0,0,0.1)',
                 borderTopColor: '#3B82F6',
                 borderRadius: '50%',
                 animation: 'spin 1s linear infinite',
-                marginBottom: 12,
                 margin: '0 auto 12px auto'
               }} />
-              <p style={{ margin: 0 }}>Chargement du modèle...</p>
+              <p style={{ margin: 0, color: '#666' }}>Chargement du modèle...</p>
             </div>
           )}
 
-          {/* Message d'erreur */}
-          {error && (
+          {(error || webGLError || downloadError) && (
             <div style={{
               position: 'absolute',
               top: '50%',
               left: '50%',
               transform: 'translate(-50%, -50%)',
               textAlign: 'center',
-              color: '#ef4444',
-              background: 'rgba(0,0,0,0.9)',
+              color: '#dc2626',
+              background: 'rgba(255,255,255,0.95)',
               padding: '32px',
               borderRadius: 16,
               maxWidth: '90%',
-              zIndex: 20
+              zIndex: 20,
+              boxShadow: '0 4px 20px rgba(0,0,0,0.1)'
             }}>
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="48" height="48">
                 <circle cx="12" cy="12" r="10" />
                 <line x1="12" y1="8" x2="12" y2="12" />
                 <line x1="12" y1="16" x2="12.01" y2="16" />
               </svg>
-              <p style={{ marginTop: 12 }}>Erreur: {error}</p>
+              <p style={{ marginTop: 12, color: '#333' }}>Erreur: {error || webGLError || downloadError}</p>
               <p style={{ fontSize: 12, color: '#666', marginTop: 8 }}>
-                Vérifiez que le fichier contient un modèle 3D valide.
+                {downloadError ? 'Problème de téléchargement du fichier. Vérifiez votre connexion réseau.' :
+                 webGLError ? 'Problème de rendu 3D. Vérifiez que WebGL est activé.' : 
+                 'Vérifiez que le fichier contient un modèle 3D valide.'}
               </p>
               <div style={{ display: 'flex', gap: 12, justifyContent: 'center', marginTop: 16 }}>
                 <button
-                  onClick={() => window.location.reload()}
+                  onClick={handleRetry}
                   style={{
                     padding: '10px 20px',
                     background: '#3B82F6',
@@ -1074,10 +1615,10 @@ export default function ModelViewerBabylon({ assetId, assetName, token, assetExt
                   onClick={onClose}
                   style={{
                     padding: '10px 20px',
-                    background: 'rgba(255,255,255,0.1)',
-                    border: '1px solid rgba(255,255,255,0.2)',
+                    background: 'rgba(0,0,0,0.05)',
+                    border: '1px solid rgba(0,0,0,0.1)',
                     borderRadius: 8,
-                    color: 'white',
+                    color: '#333',
                     cursor: 'pointer'
                   }}
                 >
@@ -1091,9 +1632,9 @@ export default function ModelViewerBabylon({ assetId, assetName, token, assetExt
         {/* Panneau d'informations */}
         <div style={{
           flex: 3,
-          background: 'rgba(0, 0, 0, 0.7)',
+          background: 'rgba(0, 0, 0, 0.9)',
           backdropFilter: 'blur(20px)',
-          borderLeft: '1px solid rgba(255,255,255,0.1)',
+          borderLeft: '1px solid rgba(255, 255, 255, 0.1)',
           padding: '24px',
           overflowY: 'auto',
           display: 'flex',
@@ -1104,29 +1645,29 @@ export default function ModelViewerBabylon({ assetId, assetName, token, assetExt
           maxWidth: '400px'
         }}>
           <div>
-            <h4 style={{ margin: '0 0 8px 0', color: '#fff' }}>Informations</h4>
+            <h4 style={{ margin: '0 0 8px 0', color: '#ffffff' }}>Informations</h4>
             <div style={{ height: 2, width: 40, background: '#3B82F6', marginBottom: 20 }} />
           </div>
 
           <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
             <div>
-              <label style={{ fontSize: 11, color: 'rgba(255,255,255,0.6)', display: 'block', marginBottom: 5 }}>NOM</label>
-              <div style={{ fontSize: 14, color: '#fff', wordBreak: 'break-word', fontWeight: 500 }}>
+              <label style={{ fontSize: 11, color: 'rgb(255, 255, 255)', display: 'block', marginBottom: 5 }}>NOM</label>
+              <div style={{ fontSize: 14, color: '#d6d5d5', wordBreak: 'break-word', fontWeight: 500 }}>
                 {assetInfo?.title || assetInfo?.name || assetName || 'Sans titre'}
               </div>
             </div>
 
             {assetInfo?.description && (
               <div>
-                <label style={{ fontSize: 11, color: 'rgba(255,255,255,0.6)', display: 'block', marginBottom: 5 }}>DESCRIPTION</label>
-                <div style={{ fontSize: 13, color: 'rgba(255,255,255,0.8)', lineHeight: 1.5 }}>
+                <label style={{ fontSize: 11, color: 'rgb(255, 255, 255)', display: 'block', marginBottom: 5 }}>DESCRIPTION</label>
+                <div style={{ fontSize: 13, color: 'rgb(255, 255, 255)', lineHeight: 1.5 }}>
                   {assetInfo.description}
                 </div>
               </div>
             )}
 
             <div>
-              <label style={{ fontSize: 11, color: 'rgba(255,255,255,0.6)', display: 'block', marginBottom: 5 }}>FORMAT</label>
+              <label style={{ fontSize: 11, color: 'rgb(255, 255, 255)', display: 'block', marginBottom: 5 }}>FORMAT</label>
               <div style={{ fontSize: 13, color: '#3B82F6', fontWeight: 500 }}>
                 {assetExt?.toUpperCase() || '3D Model'}
                 {assetExt?.toLowerCase() === 'zip' && ' 📦'}
@@ -1135,8 +1676,8 @@ export default function ModelViewerBabylon({ assetId, assetName, token, assetExt
 
             {assetInfo?.file_size && (
               <div>
-                <label style={{ fontSize: 11, color: 'rgba(255,255,255,0.6)', display: 'block', marginBottom: 5 }}>TAILLE</label>
-                <div style={{ fontSize: 13, color: 'rgba(255,255,255,0.8)' }}>
+                <label style={{ fontSize: 11, color: 'rgb(255, 255, 255)', display: 'block', marginBottom: 5 }}>TAILLE</label>
+                <div style={{ fontSize: 13, color: 'rgb(255, 255, 255)' }}>
                   {(assetInfo.file_size / (1024 * 1024)).toFixed(2)} MB
                 </div>
               </div>
@@ -1144,8 +1685,8 @@ export default function ModelViewerBabylon({ assetId, assetName, token, assetExt
 
             {assetInfo?.created_at && (
               <div>
-                <label style={{ fontSize: 11, color: 'rgba(255,255,255,0.6)', display: 'block', marginBottom: 5 }}>DATE D'AJOUT</label>
-                <div style={{ fontSize: 13, color: 'rgba(255,255,255,0.8)' }}>
+                <label style={{ fontSize: 11, color: 'rgb(255, 255, 255)', display: 'block', marginBottom: 5 }}>DATE D'AJOUT</label>
+                <div style={{ fontSize: 13, color: 'rgb(255, 255, 255)' }}>
                   {new Date(assetInfo.created_at).toLocaleDateString('fr-FR')}
                 </div>
               </div>
@@ -1153,7 +1694,7 @@ export default function ModelViewerBabylon({ assetId, assetName, token, assetExt
 
             {assetInfo?.visibility && (
               <div>
-                <label style={{ fontSize: 11, color: 'rgba(255,255,255,0.6)', display: 'block', marginBottom: 5 }}>VISIBILITÉ</label>
+                <label style={{ fontSize: 11, color: 'rgb(255, 255, 255)', display: 'block', marginBottom: 5 }}>VISIBILITÉ</label>
                 <div style={{
                   fontSize: 13,
                   color: assetInfo.visibility === 'public' ? '#10b981' : '#f59e0b',

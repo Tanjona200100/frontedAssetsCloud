@@ -3,7 +3,7 @@ import React, { useContext, useState, useEffect } from 'react';
 import { UserContext } from '../../pages/UserDashboard';
 
 // Configuration API
-const API_BASE_URL = process.env.REACT_APP_API_BASE_URL || process.env.REACT_APP_API_URL || 'http://192.168.2.73:5000/api';
+const API_BASE_URL = process.env.REACT_APP_API_BASE_URL  ;
 
 export default function ProfilePanel() {
   const { config, role, setConfig } = useContext(UserContext);

@@ -1,7 +1,7 @@
 // components/AdminDashboard/StatsPanel.jsx
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 
-const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://192.168.2.73:5000/api';
+const API_BASE_URL = process.env.REACT_APP_API_URL;
 
 const apiRequest = async (endpoint, options = {}) => {
   const token = localStorage.getItem('token');

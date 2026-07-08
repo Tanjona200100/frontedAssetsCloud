@@ -101,76 +101,104 @@ const UsersPanel = ({ openModal, searchQuery }) => {
     is_validated: true
   });
 
-const fetchUsers = async () => {
-  try {
-    setLoading(true);
-    // Utiliser l'endpoint qui liste TOUS les utilisateurs
-    const data = await apiRequest('/users/admin/users');  // Ou '/admin/users'
-    
-    // Vérifier la structure de la réponse
-    let filteredUsers = [];
-    if (data.users) {
-      filteredUsers = data.users;
-    } else if (data.data) {
-      filteredUsers = data.data;
-    } else if (Array.isArray(data)) {
-      filteredUsers = data;
+  // États pour les popups de notification
+  const [notification, setNotification] = useState({
+    show: false,
+    type: '', // 'success', 'error', 'warning', 'info'
+    title: '',
+    message: '',
+    duration: 4000
+  });
+
+  // Fonction pour afficher une notification
+  const showNotification = (type, title, message, duration = 4000) => {
+    setNotification({
+      show: true,
+      type,
+      title,
+      message,
+      duration
+    });
+  };
+
+  // Fonction pour fermer la notification
+  const closeNotification = () => {
+    setNotification(prev => ({ ...prev, show: false }));
+  };
+
+  // Auto-fermeture de la notification
+  useEffect(() => {
+    if (notification.show) {
+      const timer = setTimeout(() => {
+        closeNotification();
+      }, notification.duration);
+      return () => clearTimeout(timer);
     }
-    
-    console.log('Utilisateurs chargés:', filteredUsers); // Debug
-    
-    // Appliquer les filtres
-    if (filterRole) {
-      filteredUsers = filteredUsers.filter(user => user.role === filterRole);
-    }
-    
-    if (filterStatus) {
-      switch(filterStatus) {
-        case 'active':
-          filteredUsers = filteredUsers.filter(user => 
-            user.is_active && user.is_validated && user.status !== 'suspended' && user.status !== 'rejected'
-          );
-          break;
-        case 'pending':
-          filteredUsers = filteredUsers.filter(user => 
-            user.status === 'pending' || (!user.is_validated && user.status !== 'rejected')
-          );
-          break;
-        case 'suspended':
-          filteredUsers = filteredUsers.filter(user => user.status === 'suspended');
-          break;
-        case 'rejected':
-          filteredUsers = filteredUsers.filter(user => user.status === 'rejected');
-          break;
+  }, [notification.show, notification.duration]);
+
+  const fetchUsers = async () => {
+    try {
+      setLoading(true);
+      const data = await apiRequest('/users/admin/users');
+      
+      let filteredUsers = [];
+      if (data.users) {
+        filteredUsers = data.users;
+      } else if (data.data) {
+        filteredUsers = data.data;
+      } else if (Array.isArray(data)) {
+        filteredUsers = data;
       }
+      
+      if (filterRole) {
+        filteredUsers = filteredUsers.filter(user => user.role === filterRole);
+      }
+      
+      if (filterStatus) {
+        switch(filterStatus) {
+          case 'active':
+            filteredUsers = filteredUsers.filter(user => 
+              user.is_active && user.is_validated && user.status !== 'suspended' && user.status !== 'rejected'
+            );
+            break;
+          case 'pending':
+            filteredUsers = filteredUsers.filter(user => 
+              user.status === 'pending' || (!user.is_validated && user.status !== 'rejected')
+            );
+            break;
+          case 'suspended':
+            filteredUsers = filteredUsers.filter(user => user.status === 'suspended');
+            break;
+          case 'rejected':
+            filteredUsers = filteredUsers.filter(user => user.status === 'rejected');
+            break;
+        }
+      }
+      
+      if (searchQuery) {
+        const searchLower = searchQuery.toLowerCase();
+        filteredUsers = filteredUsers.filter(user => 
+          (user.first_name && user.first_name.toLowerCase().includes(searchLower)) ||
+          (user.last_name && user.last_name.toLowerCase().includes(searchLower)) ||
+          (user.email && user.email.toLowerCase().includes(searchLower))
+        );
+      }
+      
+      setUsers(filteredUsers);
+      setError(null);
+    } catch (err) {
+      console.error("Erreur lors du chargement des utilisateurs:", err);
+      setError(err.message || "Impossible de charger les utilisateurs");
+      setUsers([]);
+    } finally {
+      setLoading(false);
     }
-    
-    // Filtre de recherche
-    if (searchQuery) {
-      const searchLower = searchQuery.toLowerCase();
-      filteredUsers = filteredUsers.filter(user => 
-        (user.first_name && user.first_name.toLowerCase().includes(searchLower)) ||
-        (user.last_name && user.last_name.toLowerCase().includes(searchLower)) ||
-        (user.email && user.email.toLowerCase().includes(searchLower))
-      );
-    }
-    
-    setUsers(filteredUsers);
-    setError(null);
-  } catch (err) {
-    console.error("Erreur lors du chargement des utilisateurs:", err);
-    setError(err.message || "Impossible de charger les utilisateurs");
-    setUsers([]);
-  } finally {
-    setLoading(false);
-  }
-};
+  };
 
   useEffect(() => {
     fetchUsers();
   }, [filterRole, filterStatus, searchQuery]);
 
-  // Ouvrir la modale de confirmation
   const openConfirmModal = (action, user) => {
     setSelectedUser(user);
     setConfirmAction(action);
@@ -178,7 +206,6 @@ const fetchUsers = async () => {
     setShowConfirmModal(true);
   };
 
-  // Fermer la modale
   const closeConfirmModal = () => {
     setShowConfirmModal(false);
     setConfirmAction(null);
@@ -186,7 +213,6 @@ const fetchUsers = async () => {
     setRejectReason("");
   };
 
-  // Ouvrir le modal d'édition
   const openEditModal = (user) => {
     setEditingUser(user);
     setEditFormData({
@@ -201,7 +227,6 @@ const fetchUsers = async () => {
     setShowEditModal(true);
   };
 
-  // Fermer le modal d'édition
   const closeEditModal = () => {
     setShowEditModal(false);
     setEditingUser(null);
@@ -216,7 +241,6 @@ const fetchUsers = async () => {
     });
   };
 
-  // Gérer les changements dans le formulaire d'édition
   const handleEditInputChange = (e) => {
     const { name, value, type, checked } = e.target;
     setEditFormData(prev => ({
@@ -225,7 +249,6 @@ const fetchUsers = async () => {
     }));
   };
 
-  // Mettre à jour l'utilisateur
   const handleUpdateUser = async (e) => {
     e.preventDefault();
     if (!editingUser) return;
@@ -239,17 +262,26 @@ const fetchUsers = async () => {
       if (data.success) {
         await fetchUsers();
         closeEditModal();
-        alert('Utilisateur mis à jour avec succès');
+        showNotification(
+          'success',
+          '✅ Mise à jour réussie',
+          `L'utilisateur ${editingUser.first_name} ${editingUser.last_name} a été mis à jour avec succès.`
+        );
+      } else {
+        throw new Error(data.error || 'Échec de la mise à jour');
       }
     } catch (err) {
       console.error("Erreur lors de la mise à jour:", err);
-      setError(err.message || "Erreur lors de la mise à jour");
+      showNotification(
+        'error',
+        '❌ Erreur de mise à jour',
+        err.message || "Impossible de mettre à jour l'utilisateur. Veuillez réessayer."
+      );
     } finally {
       setActionLoading(null);
     }
   };
 
-  // Valider un utilisateur
   const handleValidateUser = async (user, sendEmail = true) => {
     setActionLoading(user.id);
     try {
@@ -259,20 +291,34 @@ const fetchUsers = async () => {
       });
       if (data.success) {
         await fetchUsers();
+        closeConfirmModal();
+        showNotification(
+          'success',
+          '✅ Validation réussie',
+          `Le compte de ${user.first_name} ${user.last_name} a été validé avec succès.`
+        );
+      } else {
+        throw new Error(data.error || 'Échec de la validation');
       }
     } catch (err) {
       console.error("Erreur lors de la validation:", err);
-      setError(err.message || "Erreur lors de la validation");
+      showNotification(
+        'error',
+        '❌ Erreur de validation',
+        err.message || "Impossible de valider le compte. Veuillez réessayer."
+      );
     } finally {
       setActionLoading(null);
-      closeConfirmModal();
     }
   };
 
-  // Rejeter un utilisateur
   const handleRejectUser = async (user, reason) => {
     if (!reason) {
-      setError("Veuillez indiquer une raison pour le rejet");
+      showNotification(
+        'warning',
+        '⚠️ Raison requise',
+        'Veuillez indiquer une raison pour le rejet du compte.'
+      );
       return;
     }
     
@@ -284,18 +330,37 @@ const fetchUsers = async () => {
       });
       if (data.success) {
         await fetchUsers();
+        closeConfirmModal();
+        showNotification(
+          'success',
+          '✅ Rejet effectué',
+          `Le compte de ${user.first_name} ${user.last_name} a été rejeté. Une notification a été envoyée.`
+        );
+      } else {
+        throw new Error(data.error || 'Échec du rejet');
       }
     } catch (err) {
       console.error("Erreur lors du rejet:", err);
-      setError(err.message || "Erreur lors du rejet");
+      showNotification(
+        'error',
+        '❌ Erreur de rejet',
+        err.message || "Impossible de rejeter le compte. Veuillez réessayer."
+      );
     } finally {
       setActionLoading(null);
-      closeConfirmModal();
     }
   };
 
-  // Suspendre un utilisateur
   const handleSuspendUser = async (user, reason) => {
+    if (!reason) {
+      showNotification(
+        'warning',
+        '⚠️ Raison requise',
+        'Veuillez indiquer une raison pour la suspension du compte.'
+      );
+      return;
+    }
+
     setActionLoading(user.id);
     try {
       const data = await apiRequest(`/admin/users/${user.id}/suspend`, {
@@ -304,17 +369,27 @@ const fetchUsers = async () => {
       });
       if (data.success) {
         await fetchUsers();
+        closeConfirmModal();
+        showNotification(
+          'success',
+          '✅ Suspension réussie',
+          `Le compte de ${user.first_name} ${user.last_name} a été suspendu.`
+        );
+      } else {
+        throw new Error(data.error || 'Échec de la suspension');
       }
     } catch (err) {
       console.error("Erreur lors de la suspension:", err);
-      setError(err.message || "Erreur lors de la suspension");
+      showNotification(
+        'error',
+        '❌ Erreur de suspension',
+        err.message || "Impossible de suspendre le compte. Veuillez réessayer."
+      );
     } finally {
       setActionLoading(null);
-      closeConfirmModal();
     }
   };
 
-  // Activer un utilisateur
   const handleActivateUser = async (user) => {
     setActionLoading(user.id);
     try {
@@ -323,17 +398,27 @@ const fetchUsers = async () => {
       });
       if (data.success) {
         await fetchUsers();
+        closeConfirmModal();
+        showNotification(
+          'success',
+          '✅ Activation réussie',
+          `Le compte de ${user.first_name} ${user.last_name} a été réactivé avec succès.`
+        );
+      } else {
+        throw new Error(data.error || 'Échec de l\'activation');
       }
     } catch (err) {
       console.error("Erreur lors de l'activation:", err);
-      setError(err.message || "Erreur lors de l'activation");
+      showNotification(
+        'error',
+        '❌ Erreur d\'activation',
+        err.message || "Impossible d'activer le compte. Veuillez réessayer."
+      );
     } finally {
       setActionLoading(null);
-      closeConfirmModal();
     }
   };
 
-  // Supprimer un utilisateur
   const handleDeleteUser = async (user) => {
     setActionLoading(user.id);
     try {
@@ -342,18 +427,27 @@ const fetchUsers = async () => {
       });
       if (data.success) {
         await fetchUsers();
-        alert('Utilisateur supprimé avec succès');
+        closeConfirmModal();
+        showNotification(
+          'success',
+          '✅ Suppression réussie',
+          `Le compte de ${user.first_name} ${user.last_name} a été supprimé définitivement.`
+        );
+      } else {
+        throw new Error(data.error || 'Échec de la suppression');
       }
     } catch (err) {
       console.error("Erreur lors de la suppression:", err);
-      setError(err.message || "Erreur lors de la suppression");
+      showNotification(
+        'error',
+        '❌ Erreur de suppression',
+        err.message || "Impossible de supprimer le compte. Veuillez réessayer."
+      );
     } finally {
       setActionLoading(null);
-      closeConfirmModal();
     }
   };
 
-  // Gérer l'action confirmée
   const handleConfirmAction = () => {
     if (!selectedUser) return;
     
@@ -378,40 +472,33 @@ const fetchUsers = async () => {
     }
   };
 
-  // Obtenir les initiales
   const getInitials = (user) => {
     const first = user.first_name ? user.first_name.charAt(0) : '';
     const last = user.last_name ? user.last_name.charAt(0) : '';
     return first && last ? `${first}${last}`.toUpperCase() : (first || user.email?.charAt(0) || 'U').toUpperCase();
   };
 
-  // Obtenir le nom complet
   const getFullName = (user) => {
     return `${user.first_name || ''} ${user.last_name || ''}`.trim() || user.email;
   };
 
-  // Obtenir la date formatée
   const getFormattedDate = (date) => {
     if (!date) return 'N/A';
     return new Date(date).toLocaleDateString('fr-FR');
   };
 
-  // Vérifier si l'utilisateur a besoin de validation
   const needsValidation = (user) => {
     return user.status === 'pending' || (!user.is_validated && user.status !== 'rejected');
   };
 
-  // Vérifier si l'utilisateur est suspendu
   const isSuspended = (user) => {
     return user.status === 'suspended';
   };
 
-  // Vérifier si l'utilisateur est actif
   const isActive = (user) => {
     return user.is_active && user.is_validated && user.status !== 'suspended' && user.status !== 'rejected';
   };
 
-  // Obtenir les boutons d'action selon le statut de l'utilisateur
   const ActionButtons = ({ user }) => {
     const isLoading = actionLoading === user.id;
     const isAdminUser = user.role === 'admin';
@@ -505,10 +592,49 @@ const fetchUsers = async () => {
     );
   };
 
-  // Réinitialiser les filtres
   const resetFilters = () => {
     setFilterRole("");
     setFilterStatus("");
+  };
+
+  // Rendu du composant de notification - Version grand centre
+  const NotificationPopup = () => {
+    if (!notification.show) return null;
+
+    const getIcon = () => {
+      switch (notification.type) {
+        case 'success':
+          return <MdCheckCircle className="notification-icon success" />;
+        case 'error':
+          return <MdCancel className="notification-icon error" />;
+        case 'warning':
+          return <MdBlock className="notification-icon warning" />;
+        default:
+          return null;
+      }
+    };
+
+    const getClassName = () => {
+      return `notification-popup-center ${notification.type}`;
+    };
+
+    return (
+      <div className="notification-overlay-center" onClick={closeNotification}>
+        <div className={getClassName()} onClick={(e) => e.stopPropagation()}>
+          <div className="notification-content-center">
+            <div className="notification-icon-wrapper">
+              {getIcon()}
+            </div>
+            <h3 className="notification-title-center">{notification.title}</h3>
+            <p className="notification-message-center">{notification.message}</p>
+            <button className="notification-close-center" onClick={closeNotification}>
+              ×
+            </button>
+            <div className="notification-progress-center" style={{ animationDuration: `${notification.duration}ms` }} />
+          </div>
+        </div>
+      </div>
+    );
   };
 
   if (loading && users.length === 0) {
@@ -517,6 +643,8 @@ const fetchUsers = async () => {
 
   return (
     <>
+      <NotificationPopup />
+      
       <div className="table-card">
         <div className="table-top">
           <span className="card-title" style={{ fontFamily: "'Space Grotesk', sans-serif", fontSize: "14px" }}>
