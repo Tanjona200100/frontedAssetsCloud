@@ -6,7 +6,7 @@ import { LiaEyeSolid, LiaDownloadSolid, LiaTrashAltSolid, LiaUploadSolid, LiaLoc
 import { PiCubeLight } from "react-icons/pi";
 import { FaRegFile } from "react-icons/fa6";
 import { RiDossierFill } from "react-icons/ri";
-import { MdSearch, MdClose, MdFilterList } from 'react-icons/md';
+import { MdSearch, MdClose, MdFilterList, MdCheckCircle, MdCancel, MdWarning } from 'react-icons/md';
 import JSZip from 'jszip';
 
 const API_BASE_URL = process.env.REACT_APP_API_BASE_URL || process.env.REACT_APP_API_URL;
@@ -160,8 +160,47 @@ const formatDate = (dateString) => {
   return new Date(dateString).toLocaleDateString('fr-FR');
 };
 
+// ============ COMPOSANT NOTIFICATION ============
+function NotificationPopup({ notification, onClose }) {
+  if (!notification.show) return null;
+
+  const getIcon = () => {
+    switch (notification.type) {
+      case 'success':
+        return <MdCheckCircle className="notif-icon success" />;
+      case 'error':
+        return <MdCancel className="notif-icon error" />;
+      case 'warning':
+        return <MdWarning className="notif-icon warning" />;
+      default:
+        return null;
+    }
+  };
+
+  const getClassName = () => {
+    return `notif-popup ${notification.type}`;
+  };
+
+  return (
+    <div className="notif-overlay" onClick={onClose}>
+      <div className={getClassName()} onClick={(e) => e.stopPropagation()}>
+        <div className="notif-content">
+          <div className="notif-icon-wrapper">
+            {getIcon()}
+          </div>
+          <h4 className="notif-title">{notification.title}</h4>
+          <p className="notif-message">{notification.message}</p>
+          <button className="notif-close" onClick={onClose}>×</button>
+          <div className="notif-progress" style={{ animationDuration: `${notification.duration || 4000}ms` }} />
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ============ COMPOSANT ZIP CONTENT POPUP ============
 function ZipContentPopup({ files, onClose, onSelectFile }) {
+  // ... (contenu inchangé)
   const groupedFiles = files.reduce((acc, file) => {
     const parts = file.path.split('/');
     const folder = parts.length > 1 ? parts.slice(0, -1).join('/') : 'Racine';
@@ -398,11 +437,46 @@ export default function AssetsPanel({ searchQuery = '' }) {
   const currentUserId = userData?.id || userData?.user_id || getUserIdFromToken();
 
   // États principaux
-  const [allAssets, setAllAssets] = useState([]); // Tous les assets chargés
+  const [allAssets, setAllAssets] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   
-  // Pagination - 4 colonnes x 3 lignes = 12 éléments par page
+  // État pour les notifications
+  const [notification, setNotification] = useState({
+    show: false,
+    type: '',
+    title: '',
+    message: '',
+    duration: 4000
+  });
+
+  // Fonction pour afficher une notification
+  const showNotification = (type, title, message, duration = 4000) => {
+    setNotification({
+      show: true,
+      type,
+      title,
+      message,
+      duration
+    });
+  };
+
+  // Fonction pour fermer la notification
+  const closeNotification = () => {
+    setNotification(prev => ({ ...prev, show: false }));
+  };
+
+  // Auto-fermeture de la notification
+  useEffect(() => {
+    if (notification.show) {
+      const timer = setTimeout(() => {
+        closeNotification();
+      }, notification.duration);
+      return () => clearTimeout(timer);
+    }
+  }, [notification.show, notification.duration]);
+  
+  // Pagination
   const ITEMS_PER_PAGE = 12;
   const [currentPage, setCurrentPage] = useState(1);
 
@@ -464,6 +538,9 @@ export default function AssetsPanel({ searchQuery = '' }) {
   const [zipFiles, setZipFiles] = useState([]);
   const [currentAssetId, setCurrentAssetId] = useState(null);
 
+  // Download
+  const [downloadingId, setDownloadingId] = useState(null);
+
   // ============ SYNC SEARCH ============
   useEffect(() => {
     if (searchQuery !== filters.search) {
@@ -499,7 +576,6 @@ export default function AssetsPanel({ searchQuery = '' }) {
 
     try {
       const params = new URLSearchParams();
-      // On charge tous les assets (pas de limite)
       params.append('limit', 9999);
 
       if (filters.search) params.append('search', filters.search);
@@ -528,7 +604,6 @@ export default function AssetsPanel({ searchQuery = '' }) {
       const data = await response.json();
       const rawAssetsData = data.data || data.assets || [];
       
-      // Filtrer les assets que l'utilisateur peut voir
       const assetsData = rawAssetsData.filter(canViewAsset);
       const hiddenCount = rawAssetsData.length - assetsData.length;
       if (hiddenCount > 0) {
@@ -536,8 +611,6 @@ export default function AssetsPanel({ searchQuery = '' }) {
       }
 
       setAllAssets(assetsData);
-      
-      // Réinitialiser à la page 1 si on change de filtre
       setCurrentPage(1);
       
     } catch (err) {
@@ -732,12 +805,12 @@ export default function AssetsPanel({ searchQuery = '' }) {
     event.preventDefault();
 
     if (selectedFiles.length === 0) {
-      setError('Veuillez sélectionner au moins un fichier');
+      showNotification('warning', '⚠️ Aucun fichier', 'Veuillez sélectionner au moins un fichier');
       return;
     }
 
     if (selectedFiles.length > 10) {
-      setError('Maximum 10 fichiers par upload');
+      showNotification('warning', '⚠️ Trop de fichiers', 'Maximum 10 fichiers par upload');
       return;
     }
 
@@ -772,14 +845,29 @@ export default function AssetsPanel({ searchQuery = '' }) {
         body: formData
       });
 
-      if (!response.ok) throw new Error(`Upload échoué (${response.status})`);
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || `Upload échoué (${response.status})`);
+      }
 
+      const result = await response.json();
+      
       resetUploadForm();
       setShowUploadModal(false);
       await fetchAssets();
+      
+      showNotification(
+        'success',
+        '✅ Upload réussi',
+        `${selectedFiles.length} fichier(s) ont été uploadés avec succès.`
+      );
     } catch (err) {
       console.error('Erreur upload multiple:', err);
-      setError(`Upload échoué: ${err.message}`);
+      showNotification(
+        'error',
+        '❌ Échec de l\'upload',
+        err.message || 'Une erreur est survenue lors de l\'upload'
+      );
     } finally {
       setUploading(false);
     }
@@ -788,7 +876,7 @@ export default function AssetsPanel({ searchQuery = '' }) {
   const handleFileSelect = (e) => {
     const files = Array.from(e.target.files);
     if (files.length > 10) {
-      setError(`Vous ne pouvez sélectionner que 10 fichiers maximum. Actuellement: ${files.length}`);
+      showNotification('warning', '⚠️ Trop de fichiers', `Maximum 10 fichiers. Actuellement: ${files.length}`);
       return;
     }
     setSelectedFiles(files);
@@ -817,11 +905,11 @@ export default function AssetsPanel({ searchQuery = '' }) {
     const file = e.target.files[0];
     if (file) {
       if (!file.type.startsWith('image/')) {
-        setError('La capture doit être une image (JPG, PNG, WebP)');
+        showNotification('warning', '⚠️ Format invalide', 'La capture doit être une image (JPG, PNG, WebP)');
         return;
       }
       if (file.size > 10 * 1024 * 1024) {
-        setError('La capture ne doit pas dépasser 10 MB');
+        showNotification('warning', '⚠️ Fichier trop gros', 'La capture ne doit pas dépasser 10 MB');
         return;
       }
       setUploadCapture(file);
@@ -840,14 +928,28 @@ export default function AssetsPanel({ searchQuery = '' }) {
         headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
       });
 
-      if (!response.ok) throw new Error(`Erreur: ${response.status}`);
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || `Erreur: ${response.status}`);
+      }
 
       setShowConfirmModal(false);
+      const deletedName = assetToDelete.name;
       setAssetToDelete(null);
       await fetchAssets();
+      
+      showNotification(
+        'success',
+        '✅ Suppression réussie',
+        `L'asset "${deletedName}" a été supprimé définitivement.`
+      );
     } catch (err) {
       console.error('Erreur suppression:', err);
-      setError(`Suppression échouée: vous n'avez pas le droit de supprimer ce fichier`);
+      showNotification(
+        'error',
+        '❌ Échec de la suppression',
+        err.message || "Vous n'avez pas le droit de supprimer ce fichier"
+      );
       setShowConfirmModal(false);
     }
   };
@@ -899,80 +1001,113 @@ export default function AssetsPanel({ searchQuery = '' }) {
 
       if (!response.ok) {
         if (response.status === 403) throw new Error("Vous n'avez pas le droit de modifier ce fichier");
-        throw new Error(`Erreur: ${response.status}`);
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || `Erreur: ${response.status}`);
       }
 
       closeEditModal();
       await fetchAssets();
+      
+      showNotification(
+        'success',
+        '✅ Mise à jour réussie',
+        `L'asset "${assetToEdit.title || assetToEdit.name}" a été mis à jour avec succès.`
+      );
     } catch (err) {
       console.error('Erreur modification asset:', err);
-      setError(`Modification échouée: ${err.message}`);
+      showNotification(
+        'error',
+        '❌ Échec de la mise à jour',
+        err.message || 'Une erreur est survenue lors de la mise à jour'
+      );
     } finally {
       setEditing(false);
     }
   };
 
-// Dans la fonction handleDownload, modifiez l'URL pour utiliser API_BASE_URL
-const handleDownload = async (assetId, assetName) => {
-  try {
-    // Assurez-vous que l'URL est correcte
-    const downloadUrl = `${API_BASE_URL}/assets/${assetId}/download`;
-    console.log('Téléchargement depuis:', downloadUrl); // Pour déboguer
-    
-    const response = await fetch(downloadUrl, {
-      headers: { 
-        'Authorization': `Bearer ${localStorage.getItem('token')}`,
-        'Accept': '*/*' // Important pour les fichiers binaires
-      }
-    });
+  // ============ DOWNLOAD ============
+  const handleDownload = async (asset) => {
+    try {
+      setDownloadingId(asset.id);
+      const token = localStorage.getItem('token');
 
-    if (!response.ok) {
-      // Gestion spécifique des erreurs
-      if (response.status === 404) {
-        throw new Error('Fichier non trouvé');
+      let fileName = asset.title || asset.name || asset.file_name || 'fichier';
+      
+      const ext = asset.ext || asset.file_ext || asset.extension;
+      if (ext) {
+        const cleanExt = ext.replace(/^\./, '').toLowerCase();
+        if (!fileName.toLowerCase().endsWith(`.${cleanExt}`)) {
+          fileName = `${fileName}.${cleanExt}`;
+        }
       }
-      if (response.status === 403) {
-        throw new Error('Vous n\'avez pas la permission de télécharger ce fichier');
+
+      console.log('Téléchargement:', fileName);
+
+      const response = await fetch(`${API_BASE_URL}/assets/${asset.id}/download`, {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Accept': '*/*'
+        }
+      });
+
+      if (!response.ok) {
+        let errorMsg = 'Erreur téléchargement';
+        try {
+          const errorData = await response.json();
+          errorMsg = errorData.error || errorMsg;
+        } catch (e) {
+          errorMsg = `Erreur ${response.status}: ${response.statusText}`;
+        }
+        
+        if (response.status === 404) throw new Error('Fichier non trouvé');
+        if (response.status === 403) throw new Error('Permission refusée');
+        if (response.status === 401) throw new Error('Session expirée');
+        throw new Error(errorMsg);
       }
-      throw new Error(`Erreur ${response.status}: ${response.statusText}`);
-    }
 
-    // Récupérer le nom du fichier depuis les headers si disponible
-    const contentDisposition = response.headers.get('content-disposition');
-    let fileName = assetName;
-    if (contentDisposition) {
-      const match = contentDisposition.match(/filename="?(.+)"?/);
-      if (match) fileName = match[1];
-    }
+      const contentDisposition = response.headers.get('content-disposition');
+      if (contentDisposition) {
+        const match = contentDisposition.match(/filename[^;=\n]*=((['"]).*?\2|[^;\n]*)/);
+        if (match && match[1]) {
+          fileName = match[1].replace(/['"]/g, '');
+        }
+      }
 
-    const blob = await response.blob();
-    
-    // Vérifier que le blob n'est pas vide
-    if (blob.size === 0) {
-      throw new Error('Le fichier téléchargé est vide');
+      const blob = await response.blob();
+      
+      if (blob.size === 0) {
+        throw new Error('Le fichier téléchargé est vide');
+      }
+      
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = fileName;
+      document.body.appendChild(a);
+      a.click();
+      
+      setTimeout(() => {
+        window.URL.revokeObjectURL(url);
+        document.body.removeChild(a);
+      }, 100);
+
+      showNotification(
+        'success',
+        '✅ Téléchargement réussi',
+        `Le fichier "${fileName}" a été téléchargé avec succès.`
+      );
+
+    } catch (err) {
+      console.error('Erreur téléchargement:', err);
+      showNotification(
+        'error',
+        '❌ Échec du téléchargement',
+        err.message || 'Une erreur est survenue lors du téléchargement'
+      );
+    } finally {
+      setDownloadingId(null);
     }
-    
-    // Créer l'URL de téléchargement
-    const url = window.URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = fileName;
-    
-    // Pour Safari et certains navigateurs
-    document.body.appendChild(a);
-    a.click();
-    
-    // Nettoyer
-    setTimeout(() => {
-      document.body.removeChild(a);
-      window.URL.revokeObjectURL(url);
-    }, 100);
-    
-  } catch (err) {
-    console.error('Erreur détaillée:', err);
-    setError(`Téléchargement échoué: ${err.message}`);
-  }
-};
+  };
 
   // ============ PREVIEW ============
   const openAssetPreview = (asset) => {
@@ -983,7 +1118,10 @@ const handleDownload = async (assetId, assetName) => {
 
     if (is3DModel(asset)) {
       const token = localStorage.getItem('token');
-      if (!token) { setError('Connectez-vous'); return; }
+      if (!token) { 
+        showNotification('warning', '⚠️ Non connecté', 'Veuillez vous connecter pour visualiser');
+        return; 
+      }
 
       let cleanExt = (asset.ext || asset.file_ext || asset.extension || '')
         .replace(/^\./, '')
@@ -1042,11 +1180,9 @@ const handleDownload = async (assetId, assetName) => {
   }, [filters]);
 
   // ============ PAGINATION CLIENT ============
-  // Calcul des assets paginés
   const totalAssets = allAssets.length;
   const totalPages = Math.ceil(totalAssets / ITEMS_PER_PAGE);
   
-  // S'assurer que la page actuelle est valide
   useEffect(() => {
     if (currentPage > totalPages && totalPages > 0) {
       setCurrentPage(totalPages);
@@ -1056,7 +1192,6 @@ const handleDownload = async (assetId, assetName) => {
     }
   }, [totalPages, currentPage]);
 
-  // Extraire les assets de la page actuelle
   const startIndex = (currentPage - 1) * ITEMS_PER_PAGE;
   const endIndex = Math.min(startIndex + ITEMS_PER_PAGE, totalAssets);
   const paginatedAssets = allAssets.slice(startIndex, endIndex);
@@ -1079,6 +1214,9 @@ const handleDownload = async (assetId, assetName) => {
 
   return (
     <>
+      {/* Notification Popup */}
+      <NotificationPopup notification={notification} onClose={closeNotification} />
+
       <div className="tbl-wrap" style={{ background: 'rgba(12,22,40,.8)', border: '1px solid rgba(255,255,255,.06)', borderRadius: 12, overflow: 'hidden' }}>
         <div className="tbl-top" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 18px', flexWrap: 'wrap', gap: 12 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
@@ -1310,7 +1448,7 @@ const handleDownload = async (assetId, assetName) => {
                 onMouseEnter={() => setHoveredAssetId(asset.id)}
                 onMouseLeave={() => setHoveredAssetId(null)}
               >
-                {/* Zone de preview */}
+                {/* Zone de preview - inchangée */}
                 <div
                   onClick={() => openAssetPreview(asset)}
                   style={{
@@ -1607,15 +1745,16 @@ const handleDownload = async (assetId, assetName) => {
                       {isZIP ? '📂' : 'Voir'}
                     </button>
                     <button
-                      onClick={() => handleDownload(asset.id, asset.name)}
+                      onClick={() => handleDownload(asset)}
+                      disabled={downloadingId === asset.id}
                       style={{
                         flex: 1,
-                        background: 'rgba(255,255,255,.05)',
+                        background: downloadingId === asset.id ? 'rgba(59,130,246,.2)' : 'rgba(255,255,255,.05)',
                         border: 'none',
                         padding: '4px 6px',
                         borderRadius: 4,
-                        color: '#888',
-                        cursor: 'pointer',
+                        color: downloadingId === asset.id ? '#3B82F6' : '#888',
+                        cursor: downloadingId === asset.id ? 'wait' : 'pointer',
                         fontSize: 10,
                         display: 'flex',
                         alignItems: 'center',
@@ -1623,13 +1762,34 @@ const handleDownload = async (assetId, assetName) => {
                         gap: 4,
                         transition: 'background 0.2s'
                       }}
-                      onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(255,255,255,.1)'}
-                      onMouseLeave={(e) => e.currentTarget.style.background = 'rgba(255,255,255,.05)'}
-                      title="Télécharger"
+                      onMouseEnter={(e) => {
+                        if (downloadingId !== asset.id) {
+                          e.currentTarget.style.background = 'rgba(255,255,255,.1)';
+                        }
+                      }}
+                      onMouseLeave={(e) => {
+                        if (downloadingId !== asset.id) {
+                          e.currentTarget.style.background = 'rgba(255,255,255,.05)';
+                        }
+                      }}
+                      title={downloadingId === asset.id ? 'Téléchargement en cours...' : 'Télécharger'}
                     >
-                      <LiaDownloadSolid size={12} />
+                      {downloadingId === asset.id ? (
+                        <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                          <span className="spinner" style={{
+                            display: 'inline-block',
+                            width: 10,
+                            height: 10,
+                            border: '2px solid #3B82F6',
+                            borderTop: '2px solid transparent',
+                            borderRadius: '50%',
+                            animation: 'spin 0.8s linear infinite'
+                          }} />
+                        </span>
+                      ) : (
+                        <LiaDownloadSolid size={12} />
+                      )}
                     </button>
-
                     {canEdit && (
                       <button
                         onClick={() => openEditModal(asset)}
@@ -1714,7 +1874,7 @@ const handleDownload = async (assetId, assetName) => {
           </div>
         )}
 
-        {/* Pagination en bas */}
+        {/* Pagination */}
         {totalPages > 1 && (
           <div style={{
             display: 'flex',
@@ -1743,7 +1903,6 @@ const handleDownload = async (assetId, assetName) => {
             </div>
 
             <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-              {/* Bouton Première page */}
               <button
                 onClick={() => setCurrentPage(1)}
                 disabled={currentPage === 1}
@@ -1767,7 +1926,6 @@ const handleDownload = async (assetId, assetName) => {
                 «
               </button>
 
-              {/* Bouton Précédent */}
               <button
                 onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
                 disabled={currentPage === 1}
@@ -1791,7 +1949,6 @@ const handleDownload = async (assetId, assetName) => {
                 ‹
               </button>
 
-              {/* Numéros de page */}
               {(() => {
                 const pageNumbers = [];
                 const maxVisiblePages = 5;
@@ -1869,7 +2026,6 @@ const handleDownload = async (assetId, assetName) => {
                 ));
               })()}
 
-              {/* Bouton Suivant */}
               <button
                 onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
                 disabled={currentPage === totalPages}
@@ -1893,7 +2049,6 @@ const handleDownload = async (assetId, assetName) => {
                 ›
               </button>
 
-              {/* Bouton Dernière page */}
               <button
                 onClick={() => setCurrentPage(totalPages)}
                 disabled={currentPage === totalPages}
@@ -1917,7 +2072,6 @@ const handleDownload = async (assetId, assetName) => {
                 »
               </button>
 
-              {/* Sélecteur de page */}
               <div style={{ marginLeft: 8, display: 'flex', alignItems: 'center', gap: 4 }}>
                 <span style={{ fontSize: 11, color: 'var(--dim)' }}>Page</span>
                 <input
@@ -1979,7 +2133,7 @@ const handleDownload = async (assetId, assetName) => {
             </div>
             <form onSubmit={handleMultipleUpload}>
               <div className="upload-modal-body">
-                <div className="upload-dropzone" onDragOver={(e) => e.preventDefault()} onDrop={(e) => { e.preventDefault(); const files = Array.from(e.dataTransfer.files); if (files.length > 0 && files.length <= 10) { setSelectedFiles(files); } else if (files.length > 10) { setError("Maximum 10 fichiers"); } }}>
+                <div className="upload-dropzone" onDragOver={(e) => e.preventDefault()} onDrop={(e) => { e.preventDefault(); const files = Array.from(e.dataTransfer.files); if (files.length > 0 && files.length <= 10) { setSelectedFiles(files); } else if (files.length > 10) { showNotification('warning', '⚠️ Trop de fichiers', 'Maximum 10 fichiers'); } }}>
                   <input type="file" id="file-upload-input" multiple onChange={handleFileSelect} style={{ display: 'none' }} accept="image/*,video/*,.glb,.gltf,.fbx,.obj,.zip,.rar,.7z,.psd,.ai,.json,.pdf,.doc,.docx" />
                   <label htmlFor="file-upload-input" className="upload-dropzone-label">
                     <div className="upload-dropzone-icon">
@@ -2162,7 +2316,6 @@ const handleDownload = async (assetId, assetName) => {
                     </div>
                   </div>
                 </div>
-                {error && <div className="upload-error"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="16" height="16"><circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="16" x2="12.01" y2="16" /></svg>{error}</div>}
               </div>
               <div className="upload-modal-footer">
                 <button type="button" className="upload-btn upload-btn-secondary" onClick={() => { setShowUploadModal(false); resetUploadForm(); }}>Annuler</button>
@@ -2246,7 +2399,6 @@ const handleDownload = async (assetId, assetName) => {
                     </div>
                   </div>
                 </div>
-                {error && <div className="upload-error"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="16" height="16"><circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="16" x2="12.01" y2="16" /></svg>{error}</div>}
               </div>
               <div className="upload-modal-footer">
                 <button type="button" className="upload-btn upload-btn-secondary" onClick={closeEditModal}>Annuler</button>
@@ -2296,7 +2448,158 @@ const handleDownload = async (assetId, assetName) => {
           from { transform: rotate(0deg); }
           to { transform: rotate(360deg); }
         }
-        
+
+        /* Styles pour la notification */
+        .notif-overlay {
+          position: fixed;
+          top: 0;
+          left: 0;
+          right: 0;
+          bottom: 0;
+          background: rgba(0, 0, 0, 0.5);
+          backdrop-filter: blur(4px);
+          z-index: 10000;
+          display: flex;
+          justify-content: center;
+          align-items: center;
+          animation: notifFadeIn 0.3s ease-out;
+        }
+
+        .notif-popup {
+          background: #ffffff;
+          border-radius: 24px;
+          box-shadow: 0 30px 80px rgba(0, 0, 0, 0.3);
+          max-width: 480px;
+          width: 90%;
+          position: relative;
+          overflow: hidden;
+          animation: notifScaleIn 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+          padding: 35px 30px 30px;
+          border: 2px solid transparent;
+        }
+
+        .notif-popup.success {
+          background: #f0fdf4;
+          border-color: #86efac;
+        }
+
+        .notif-popup.error {
+          background: #fef2f2;
+          border-color: #fca5a5;
+        }
+
+        .notif-popup.warning {
+          background: #fffbeb;
+          border-color: #fcd34d;
+        }
+
+        .notif-content {
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          text-align: center;
+        }
+
+        .notif-icon-wrapper {
+          margin-bottom: 16px;
+        }
+
+        .notif-icon {
+          font-size: 56px;
+          display: block;
+        }
+
+        .notif-icon.success {
+          color: #22c55e;
+        }
+
+        .notif-icon.error {
+          color: #ef4444;
+        }
+
+        .notif-icon.warning {
+          color: #f59e0b;
+        }
+
+        .notif-title {
+          font-size: 22px;
+          font-weight: 700;
+          margin: 0 0 8px 0;
+          color: #1f2937;
+        }
+
+        .notif-message {
+          font-size: 15px;
+          line-height: 1.6;
+          color: #4b5563;
+          margin: 0 0 6px 0;
+          max-width: 380px;
+        }
+
+        .notif-close {
+          position: absolute;
+          top: 14px;
+          right: 18px;
+          background: none;
+          border: none;
+          font-size: 26px;
+          color: #9ca3af;
+          cursor: pointer;
+          padding: 4px 8px;
+          border-radius: 8px;
+          transition: all 0.2s;
+          line-height: 1;
+        }
+
+        .notif-close:hover {
+          color: #1f2937;
+          background: rgba(0, 0, 0, 0.05);
+        }
+
+        .notif-progress {
+          position: absolute;
+          bottom: 0;
+          left: 0;
+          height: 4px;
+          background: #e5e7eb;
+          animation: notifProgress 4s linear forwards;
+          border-radius: 0 0 0 4px;
+        }
+
+        .notif-popup.success .notif-progress {
+          background: #86efac;
+        }
+
+        .notif-popup.error .notif-progress {
+          background: #fca5a5;
+        }
+
+        .notif-popup.warning .notif-progress {
+          background: #fcd34d;
+        }
+
+        @keyframes notifFadeIn {
+          from { opacity: 0; }
+          to { opacity: 1; }
+        }
+
+        @keyframes notifScaleIn {
+          from {
+            opacity: 0;
+            transform: scale(0.8) translateY(20px);
+          }
+          to {
+            opacity: 1;
+            transform: scale(1) translateY(0);
+          }
+        }
+
+        @keyframes notifProgress {
+          from { width: 100%; }
+          to { width: 0%; }
+        }
+
+        /* Styles existants */
         .modal-overlay {
           position: fixed;
           top: 0;
@@ -2603,26 +2906,6 @@ const handleDownload = async (assetId, assetName) => {
           color: var(--dim);
         }
         
-        .upload-error {
-          display: flex;
-          align-items: center;
-          gap: 8px;
-          padding: 8px 12px;
-          background: rgba(220,38,38,.15);
-          border-radius: 6px;
-          color: #ef4444;
-          font-size: 12px;
-          margin-top: 12px;
-        }
-        
-        .upload-modal-footer {
-          padding: 16px 20px;
-          border-top: 1px solid rgba(255,255,255,.1);
-          display: flex;
-          justify-content: flex-end;
-          gap: 12px;
-        }
-        
         .upload-btn {
           padding: 8px 20px;
           border-radius: 8px;
@@ -2733,8 +3016,7 @@ const handleDownload = async (assetId, assetName) => {
         .modal-btn-delete:hover {
           background: #dc2626;
         }
-        
-        /* Responsive */
+
         @media (max-width: 1200px) {
           .tbl-wrap > div:not(.tbl-top):not(.pag) {
             grid-template-columns: repeat(3, 1fr) !important;

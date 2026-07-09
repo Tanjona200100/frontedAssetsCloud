@@ -1,5 +1,5 @@
 // src/components/UserDashboard/ModelViewerThree.jsx
-// Version complète avec correction de l'erreur Button
+// Version avec normalisation de la taille des modèles
 
 import React, { useState, useEffect, useCallback, useRef, forwardRef, useImperativeHandle, Suspense } from 'react';
 import { Canvas, useFrame } from '@react-three/fiber';
@@ -15,9 +15,51 @@ import JSZip from 'jszip';
 const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:5000';
 
 // ============ PARAMÈTRES DE CAMÉRA ============
-const DEFAULT_CAMERA_PADDING = 3.5;
-const MIN_CAMERA_DISTANCE = 3;
-const MAX_CAMERA_DISTANCE = 50;
+const DEFAULT_CAMERA_PADDING = 1.8;
+const MIN_CAMERA_DISTANCE = 1;
+const MAX_CAMERA_DISTANCE = 30;
+const TARGET_MODEL_SIZE = 2.5; // Taille cible pour le modèle (en unités 3D)
+const MAX_MODEL_SIZE = 50; // Taille maximale avant normalisation
+
+// ============ FONCTION DE NORMALISATION DE LA TAILLE ============
+function normalizeModelSize(model, targetSize = TARGET_MODEL_SIZE) {
+  if (!model) return;
+
+  try {
+    // Calculer la boîte englobante
+    const box = new THREE.Box3().setFromObject(model);
+    const size = box.getSize(new THREE.Vector3());
+    const center = box.getCenter(new THREE.Vector3());
+    
+    // Trouver la plus grande dimension
+    const maxDim = Math.max(size.x, size.y, size.z);
+    
+    // Si le modèle est trop grand ou trop petit, le normaliser
+    if (maxDim > MAX_MODEL_SIZE || maxDim < 0.01) {
+      const scale = targetSize / maxDim;
+      console.log(`📏 Normalisation du modèle: taille=${maxDim.toFixed(2)}, facteur=${scale.toFixed(4)}`);
+      
+      // Appliquer le facteur d'échelle
+      model.scale.set(scale, scale, scale);
+      
+      // Recalculer la boîte englobante après mise à l'échelle
+      const newBox = new THREE.Box3().setFromObject(model);
+      const newCenter = newBox.getCenter(new THREE.Vector3());
+      
+      // Centrer le modèle
+      model.position.sub(newCenter);
+      
+      return { scale, originalSize: maxDim, newSize: maxDim * scale };
+    } else {
+      // Le modèle est déjà à une taille raisonnable, on le centre juste
+      model.position.sub(center);
+      return { scale: 1, originalSize: maxDim, newSize: maxDim };
+    }
+  } catch (error) {
+    console.warn('Erreur lors de la normalisation du modèle:', error);
+    return null;
+  }
+}
 
 // ============ SYSTÈME DE FICHIERS VIRTUEL ============
 class VirtualFileSystem {
@@ -198,6 +240,7 @@ function calculateModelStats(model) {
   };
 }
 
+// ============ FONCTION CAMÉRA OPTIMISÉE ============
 function fitCameraToModel(camera, controls, model, padding = DEFAULT_CAMERA_PADDING) {
   if (!model || !camera || !controls) return;
 
@@ -214,9 +257,9 @@ function fitCameraToModel(camera, controls, model, padding = DEFAULT_CAMERA_PADD
     }
 
     const position = new THREE.Vector3(
-      center.x + distance * 0.7,
-      center.y + distance * 0.5,
-      center.z + distance * 0.9
+      center.x + distance * 0.6,
+      center.y + distance * 0.4,
+      center.z + distance * 0.8
     );
     
     camera.position.copy(position);
@@ -225,8 +268,8 @@ function fitCameraToModel(camera, controls, model, padding = DEFAULT_CAMERA_PADD
     controls.target.copy(center);
     controls.update();
 
-    controls.minDistance = Math.max(maxDim * 0.1, 0.1);
-    controls.maxDistance = Math.max(distance * 8, 20);
+    controls.minDistance = Math.max(maxDim * 0.05, 0.1);
+    controls.maxDistance = Math.max(distance * 5, 15);
 
     return { distance, center, size };
   } catch (error) {
@@ -254,7 +297,6 @@ function isValidTexture(texture) {
 
 // ============ TOKENISATION ET DICTIONNAIRE DE SYNONYMES ============
 
-// Découpe un nom de fichier (sans extension) en tokens exploitables
 function tokenizeFilename(filename) {
   const nameWithoutExt = filename.split('.').slice(0, -1).join('.');
   return nameWithoutExt
@@ -263,8 +305,6 @@ function tokenizeFilename(filename) {
     .filter(t => t.length > 0);
 }
 
-// Dictionnaire de synonymes par type de texture PBR
-// Chaque type a une liste de tokens "forts" (match exact = fiable)
 const TEXTURE_TYPE_SYNONYMS = {
   map:          ['basecolor', 'diffuse', 'albedo', 'color', 'col', 'base', 'diff', 'bc', 'alb'],
   normalMap:    ['normal', 'nor', 'nrm', 'bump', 'nml', 'norm'],
@@ -275,8 +315,6 @@ const TEXTURE_TYPE_SYNONYMS = {
   aoMap:        ['ao', 'ambient', 'occlusion', 'occ', 'ambientocclusion'],
 };
 
-// Types de textures "packées" fréquentes (ORM = Occlusion/Roughness/Metalness)
-// Un seul fichier peut légitimement remplir plusieurs canaux
 const PACKED_TEXTURE_HINTS = ['orm', 'rma', 'mra', 'arm', 'packed', 'mixmap'];
 
 function isPackedTexture(filename) {
@@ -284,25 +322,20 @@ function isPackedTexture(filename) {
   return PACKED_TEXTURE_HINTS.some(hint => f.includes(hint));
 }
 
-// Score un fichier texture pour un type donné, en tenant compte
-// de TOUS les tokens du nom de fichier (pas seulement un substring)
 function scoreTextureForType(filename, contextTokens, type) {
   const fileTokens = tokenizeFilename(filename);
   const synonyms = TEXTURE_TYPE_SYNONYMS[type] || [];
 
   let score = 0;
 
-  // Match exact d'un token complet = score fort (évite les faux positifs)
   if (fileTokens.some(t => synonyms.includes(t))) {
     score += 10;
   } else if (fileTokens.some(ft => synonyms.some(s => ft.includes(s) || s.includes(ft)))) {
-    // Match partiel (substring dans un sens ou l'autre) = score plus faible
     score += 3;
   }
 
   if (score === 0) return 0;
 
-  // Bonus si le nom du matériau/mesh apparaît aussi dans le nom du fichier
   if (contextTokens.length > 0 && fileTokens.some(ft => contextTokens.includes(ft))) {
     score += 5;
   }
@@ -310,12 +343,9 @@ function scoreTextureForType(filename, contextTokens, type) {
   return score;
 }
 
-// Résout l'assignation textures <-> types pour UN matériau donné.
-// Approche globale : on score tous les couples (texture, type) puis on
-// assigne dans l'ordre décroissant de score, en évitant les conflits.
 function resolveTextureAssignment(availableTextures, contextTokens, usedTextures, isPhong) {
   const types = Object.keys(TEXTURE_TYPE_SYNONYMS);
-  if (isPhong) types.push('specularMap'); // specular n'est pas dans le dict standard
+  if (isPhong) types.push('specularMap');
   if (isPhong && !TEXTURE_TYPE_SYNONYMS.specularMap) {
     TEXTURE_TYPE_SYNONYMS.specularMap = ['specular', 'spec', 'roughness', 'rough'];
   }
@@ -323,7 +353,7 @@ function resolveTextureAssignment(availableTextures, contextTokens, usedTextures
   const candidates = [];
 
   for (const tex of availableTextures) {
-    if (usedTextures.has(tex.path)) continue; // déjà consommée par un autre matériau
+    if (usedTextures.has(tex.path)) continue;
 
     for (const type of types) {
       const score = scoreTextureForType(tex.filename, contextTokens, type);
@@ -333,7 +363,6 @@ function resolveTextureAssignment(availableTextures, contextTokens, usedTextures
     }
   }
 
-  // Trie par score décroissant : les meilleurs matchs sont assignés en premier
   candidates.sort((a, b) => b.score - a.score);
 
   const assigned = {};
@@ -343,16 +372,12 @@ function resolveTextureAssignment(availableTextures, contextTokens, usedTextures
   for (const { tex, type, score, packed } of candidates) {
     if (typesFilled.has(type)) continue;
 
-    // Une texture "packée" (ORM etc.) ou à score faible (<5) peut être
-    // réutilisée pour un autre canal du MÊME matériau sans être verrouillée.
     const alreadyLockedElsewhere = filesLockedForThisMaterial.has(tex.path) && !packed;
     if (alreadyLockedElsewhere) continue;
 
     assigned[type] = tex;
     typesFilled.add(type);
 
-    // On ne verrouille définitivement (pour les autres matériaux) que si
-    // le match est fiable ET que ce n'est pas un fichier packé partagé.
     if (score >= 5 && !packed) {
       filesLockedForThisMaterial.add(tex.path);
     }
@@ -361,7 +386,7 @@ function resolveTextureAssignment(availableTextures, contextTokens, usedTextures
   return assigned;
 }
 
-// ============ CHARGEMENT DES TEXTURES DEPUIS LE VFS (VERSION CORRIGÉE) ============
+// ============ CHARGEMENT DES TEXTURES DEPUIS LE VFS ============
 
 async function applyZipTexturesToThree(model, virtualFS) {
   if (!model || !virtualFS) return 0;
@@ -374,9 +399,8 @@ async function applyZipTexturesToThree(model, virtualFS) {
   console.log('===================================\n');
 
   const usedTextures = new Set();
-  const textureCache = new Map(); // path -> THREE.Texture (évite de recharger 2x le même fichier packé)
+  const textureCache = new Map();
 
-  // Charge une texture depuis le VFS et retourne l'objet THREE.Texture (avec cache)
   const loadTexture = async (entry) => {
     if (textureCache.has(entry.path)) {
       return textureCache.get(entry.path);
@@ -401,7 +425,6 @@ async function applyZipTexturesToThree(model, virtualFS) {
     }
   };
 
-  // === RASSEMBLER MATÉRIAU + MESHES QUI L'UTILISENT ===
   const materialEntries = [];
   const materialIndex = new Map();
 
@@ -429,7 +452,6 @@ async function applyZipTexturesToThree(model, virtualFS) {
     console.log(`📦 ===== MATÉRIAU: ${material.name || 'sans nom'} (${material.type}) =====`);
     console.log(`  - meshes utilisant ce matériau: ${meshes.map(m => m.name || '(sans nom)').join(', ')}`);
 
-    // === CONVERSION PHONG → STANDARD SI NÉCESSAIRE ===
     if (isPhong) {
       console.log(`🔄 Conversion de MeshPhongMaterial en MeshStandardMaterial`);
 
@@ -464,7 +486,6 @@ async function applyZipTexturesToThree(model, virtualFS) {
       console.log(`  ✅ Matériau converti en MeshStandardMaterial`);
     }
 
-    // === CONTEXTE DE NOM POUR LE MATCHING (tokenisé) ===
     const materialName = targetMaterial.name || material.name || '';
     const meshNames = meshes.map(m => m.name).filter(Boolean);
     const contextTokens = [materialName, ...meshNames]
@@ -473,7 +494,6 @@ async function applyZipTexturesToThree(model, virtualFS) {
 
     console.log(`  - tokens de contexte: [${contextTokens.join(', ') || 'aucun'}]`);
 
-    // === RÉSOLUTION GLOBALE DES TEXTURES POUR CE MATÉRIAU ===
     const assignment = resolveTextureAssignment(
       availableTextures,
       contextTokens,
@@ -484,7 +504,6 @@ async function applyZipTexturesToThree(model, virtualFS) {
     const pendingMaps = {};
 
     for (const [prop, match] of Object.entries(assignment)) {
-      // Ne pas écraser une texture déjà définie nativement (GLB/MTL)
       if (targetMaterial[prop] && targetMaterial[prop].isTexture) {
         console.log(`    ⏭️ ${prop} déjà défini, ignoré`);
         continue;
@@ -505,14 +524,9 @@ async function applyZipTexturesToThree(model, virtualFS) {
       console.log(`  ⚠️ Aucune texture trouvée pour ce matériau`);
     }
 
-    // Applique toutes les maps résolues en une seule fois
     Object.assign(targetMaterial, pendingMaps);
     targetMaterial.needsUpdate = true;
 
-    // === ASSIGNER LE MATÉRIAU AUX MESHES ===
-    // Un clone par mesh évite le crash "refreshUniformsCommon" quand un même
-    // matériau est partagé entre meshes ayant des attributs de géométrie
-    // différents (skinning, vertex colors, UV2, etc.)
     if (meshes.length === 1) {
       meshes[0].material = targetMaterial;
     } else {
@@ -637,11 +651,11 @@ async function loadModelFromZip(zipFile, virtualFS, selectedFile) {
 
     URL.revokeObjectURL(fileUrl);
 
-    const box = new THREE.Box3().setFromObject(model);
-    const center = box.getCenter(new THREE.Vector3());
-    model.position.sub(center);
+    // Normalisation de la taille du modèle
+    const normalizationResult = normalizeModelSize(model, TARGET_MODEL_SIZE);
+    console.log('📏 Résultat de la normalisation:', normalizationResult);
 
-    return { model, format: modelFormat };
+    return { model, format: modelFormat, normalizationResult };
 
   } catch (error) {
     URL.revokeObjectURL(fileUrl);
@@ -708,7 +722,6 @@ function AnimationController({ model, onAnimationChange }) {
 
   if (animations.length === 0) return null;
 
-  // Utilisation de Html pour les boutons d'animation (CORRECTION)
   return (
     <Html position={[0, 0, 0]} center>
       <div style={{
@@ -853,6 +866,7 @@ const ThreeModelLoader = forwardRef(function ThreeModelLoader(
   const virtualFSRef = useRef(null);
   const [downloadError, setDownloadError] = useState(null);
   const [canvasReady, setCanvasReady] = useState(false);
+  const [normalizationInfo, setNormalizationInfo] = useState(null);
 
   useImperativeHandle(ref, () => ({
     setView: (viewName) => {
@@ -932,17 +946,21 @@ const ThreeModelLoader = forwardRef(function ThreeModelLoader(
     },
   }), []);
 
-  const handleModelLoaded = useCallback((modelData, texturesLoaded = 0) => {
+  const handleModelLoaded = useCallback((modelData, texturesLoaded = 0, normInfo = null) => {
     try {
       setModel(modelData);
       modelRef.current = modelData;
       setIsLoaded(true);
+      setNormalizationInfo(normInfo);
       
       const modelStats = calculateModelStats(modelData);
       setStats(modelStats);
 
       console.log(`📊 Statistiques du modèle:`, modelStats);
       console.log(`🖼️ ${texturesLoaded} textures appliquées`);
+      if (normInfo) {
+        console.log(`📏 Normalisation: facteur=${normInfo.scale?.toFixed(4)}, taille originale=${normInfo.originalSize?.toFixed(2)} → ${normInfo.newSize?.toFixed(2)}`);
+      }
 
       setTimeout(() => {
         try {
@@ -1036,6 +1054,7 @@ const ThreeModelLoader = forwardRef(function ThreeModelLoader(
     setIsLoaded(false);
     setWebGLError(null);
     setDownloadError(null);
+    setNormalizationInfo(null);
     setRetryCount(prev => prev + 1);
   }, []);
 
@@ -1082,11 +1101,11 @@ const ThreeModelLoader = forwardRef(function ThreeModelLoader(
               selectedFile = virtualFS.files.has(selectedZipFile.path) ? selectedZipFile : null;
             }
 
-            const { model: modelData, format } = await loadModelFromZip(zipFile, virtualFS, selectedFile);
+            const { model: modelData, format, normalizationResult } = await loadModelFromZip(zipFile, virtualFS, selectedFile);
 
             const texturesLoaded = await applyZipTexturesToThree(modelData, virtualFS);
 
-            handleModelLoaded(modelData, texturesLoaded);
+            handleModelLoaded(modelData, texturesLoaded, normalizationResult);
 
           } catch (zipError) {
             console.error('Erreur extraction ZIP:', zipError);
@@ -1166,11 +1185,11 @@ const ThreeModelLoader = forwardRef(function ThreeModelLoader(
               throw new Error(`Format non supporté: ${ext}`);
           }
 
-          const box = new THREE.Box3().setFromObject(modelData);
-          const center = box.getCenter(new THREE.Vector3());
-          modelData.position.sub(center);
+          // Normalisation de la taille du modèle
+          const normalizationResult = normalizeModelSize(modelData, TARGET_MODEL_SIZE);
+          console.log('📏 Résultat de la normalisation:', normalizationResult);
 
-          handleModelLoaded(modelData);
+          handleModelLoaded(modelData, 0, normalizationResult);
 
         } catch (loadError) {
           console.error('Erreur chargement:', loadError);
@@ -1214,7 +1233,7 @@ const ThreeModelLoader = forwardRef(function ThreeModelLoader(
     <div style={{ width: '100%', height: '100%', position: 'relative', background: '#f0f0f0' }}>
       <Canvas
         key={`canvas-${retryCount}`}
-        camera={{ position: [8, 6, 10], fov: 45 }}
+        camera={{ position: [4, 3, 5], fov: 45 }}
         style={{ 
           background: '#f0f0f0',
           width: '100%',
@@ -1260,8 +1279,8 @@ const ThreeModelLoader = forwardRef(function ThreeModelLoader(
           enablePan
           enableZoom
           enableRotate
-          minDistance={0.5}
-          maxDistance={100}
+          minDistance={0.3}
+          maxDistance={50}
           zoomSpeed={1.2}
           rotateSpeed={0.8}
           makeDefault
@@ -1318,6 +1337,11 @@ const ThreeModelLoader = forwardRef(function ThreeModelLoader(
           <div style={{ color: '#3B82F6', fontSize: 10 }}>
             {stats.dimensions.width.toFixed(2)} × {stats.dimensions.height.toFixed(2)} × {stats.dimensions.depth.toFixed(2)}
           </div>
+          {normalizationInfo && normalizationInfo.scale !== 1 && (
+            <div style={{ color: '#F59E0B', fontSize: 9, marginTop: 2 }}>
+              Redimensionné: ×{normalizationInfo.scale.toFixed(2)}
+            </div>
+          )}
         </div>
       )}
 
@@ -1331,7 +1355,7 @@ const ThreeModelLoader = forwardRef(function ThreeModelLoader(
   );
 });
 
-// ============ COMPOSANT DE CONTRÔLES CAMÉRA (CORRIGÉ) ============
+// ============ COMPOSANT DE CONTRÔLES CAMÉRA ============
 
 function CameraControlsPanel({ viewerRef, visible }) {
   if (!visible) return null;
