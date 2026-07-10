@@ -1,8 +1,8 @@
 // src/components/UserDashboard/AssetsPanel.jsx
-import React, { useContext, useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useContext, useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { UserContext } from '../../pages/UserDashboard';
 import ModelViewer from './ModelViewer';
-import { LiaEyeSolid, LiaDownloadSolid, LiaTrashAltSolid, LiaUploadSolid, LiaLockSolid, LiaGlobeSolid, LiaImageSolid, LiaUserSolid, LiaFolderOpen, LiaTagSolid, LiaEditSolid } from 'react-icons/lia';
+import { LiaEyeSolid, LiaDownloadSolid, LiaTrashAltSolid, LiaUploadSolid, LiaLockSolid, LiaGlobeSolid, LiaImageSolid, LiaUserSolid, LiaFolderOpen, LiaTagSolid, LiaEditSolid, LiaExpandSolid, LiaCompressSolid } from 'react-icons/lia';
 import { PiCubeLight } from "react-icons/pi";
 import { FaRegFile } from "react-icons/fa6";
 import { RiDossierFill } from "react-icons/ri";
@@ -80,6 +80,38 @@ const isZipFile = (asset) => {
          name?.endsWith('.7z');
 };
 
+const isVideoFile = (asset) => {
+  const ext = asset.ext?.toLowerCase().replace(/^\./, '');
+  const fileType = asset.file_type?.toLowerCase();
+  const name = asset.name?.toLowerCase();
+  
+  return fileType === 'video' ||
+         fileType === 'mp4' ||
+         fileType === 'video/mp4' ||
+         ['mp4', 'webm', 'mov', 'avi', 'mkv', 'm4v', 'mpg', 'mpeg', 'wmv', 'flv'].includes(ext) ||
+         name?.endsWith('.mp4') ||
+         name?.endsWith('.webm') ||
+         name?.endsWith('.mov') ||
+         name?.endsWith('.avi');
+};
+
+const isImageFile = (asset) => {
+  const ext = asset.ext?.toLowerCase().replace(/^\./, '');
+  const fileType = asset.file_type?.toLowerCase();
+  const name = asset.name?.toLowerCase();
+  
+  return fileType === 'image' ||
+         fileType === 'image/png' ||
+         fileType === 'image/jpeg' ||
+         fileType === 'image/webp' ||
+         ['jpg', 'jpeg', 'png', 'webp', 'gif', 'bmp', 'tiff', 'svg', 'ico'].includes(ext) ||
+         name?.endsWith('.jpg') ||
+         name?.endsWith('.jpeg') ||
+         name?.endsWith('.png') ||
+         name?.endsWith('.webp') ||
+         name?.endsWith('.gif');
+};
+
 const isTextureFile = (asset) => {
   const ext = asset.ext?.toLowerCase().replace(/^\./, '');
   const name = asset.name?.toLowerCase();
@@ -118,8 +150,23 @@ const isMaterialFile = (asset) => {
          name?.includes('mtl');
 };
 
+// Fonction pour obtenir le contenu média (vidéo ou image) directement
+const getMediaContent = (asset) => {
+  // Si c'est une vidéo
+  if (isVideoFile(asset)) {
+    return { type: 'video', url: asset.video_url || asset.file_url || asset.capture_url };
+  }
+  // Si c'est une image
+  if (isImageFile(asset)) {
+    return { type: 'image', url: asset.image_url || asset.file_url || asset.capture_url };
+  }
+  return { type: 'none', url: null };
+};
+
 const getFileCategory = (asset) => {
   if (isZipFile(asset)) return 'archive';
+  if (isVideoFile(asset)) return 'video';
+  if (isImageFile(asset)) return 'image';
   if (is3DModel(asset)) return '3d_model';
   if (isTextureFile(asset)) return 'texture';
   if (isMaterialFile(asset)) return 'material';
@@ -130,6 +177,8 @@ const getFileIcon = (asset) => {
   const category = getFileCategory(asset);
   switch (category) {
     case 'archive': return '📦';
+    case 'video': return '🎬';
+    case 'image': return '🖼️';
     case '3d_model': return '🎮';
     case 'texture': return '🖼️';
     case 'material': return '📄';
@@ -141,6 +190,8 @@ const getFileColor = (asset) => {
   const category = getFileCategory(asset);
   switch (category) {
     case 'archive': return '#f59e0b';
+    case 'video': return '#8B5CF6';
+    case 'image': return '#3B82F6';
     case '3d_model': return '#10b981';
     case 'texture': return '#3B82F6';
     case 'material': return '#8B5CF6';
@@ -198,9 +249,248 @@ function NotificationPopup({ notification, onClose }) {
   );
 }
 
+// ============ COMPOSANT MEDIA VIEWER (POPUP) ============
+function MediaViewerPopup({ asset, mediaUrl, mediaType, onClose }) {
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  const videoRef = useRef(null);
+
+  // Gestion du plein écran
+  const toggleFullscreen = () => {
+    const element = videoRef.current || document.querySelector('.media-viewer-content');
+    if (!element) return;
+
+    if (!document.fullscreenElement) {
+      element.requestFullscreen?.() || element.webkitRequestFullscreen?.() || element.msRequestFullscreen?.();
+      setIsFullscreen(true);
+    } else {
+      document.exitFullscreen?.() || document.webkitExitFullscreen?.() || document.msExitFullscreen?.();
+      setIsFullscreen(false);
+    }
+  };
+
+  // Écouter les changements de plein écran
+  useEffect(() => {
+    const handleFullscreenChange = () => {
+      setIsFullscreen(!!document.fullscreenElement);
+    };
+    document.addEventListener('fullscreenchange', handleFullscreenChange);
+    document.addEventListener('webkitfullscreenchange', handleFullscreenChange);
+    document.addEventListener('msfullscreenchange', handleFullscreenChange);
+    return () => {
+      document.removeEventListener('fullscreenchange', handleFullscreenChange);
+      document.removeEventListener('webkitfullscreenchange', handleFullscreenChange);
+      document.removeEventListener('msfullscreenchange', handleFullscreenChange);
+    };
+  }, []);
+
+  // Empêcher le scroll du body
+  useEffect(() => {
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.body.style.overflow = 'unset';
+    };
+  }, []);
+
+  return (
+    <div
+      className="media-viewer-overlay"
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
+      style={{
+        position: 'fixed',
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 0,
+        background: 'rgba(0,0,0,0.92)',
+        backdropFilter: 'blur(12px)',
+        zIndex: 9999,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        padding: '20px'
+      }}
+    >
+      <div
+        className="media-viewer-content"
+        style={{
+          position: 'relative',
+          maxWidth: '90vw',
+          maxHeight: '90vh',
+          width: '100%',
+          height: '100%',
+          display: 'flex',
+          flexDirection: 'column',
+          background: 'rgba(0,0,0,0.5)',
+          borderRadius: '16px',
+          overflow: 'hidden'
+        }}
+      >
+        {/* Header avec informations et contrôles */}
+        <div style={{
+          padding: '16px 20px',
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          background: 'rgba(0,0,0,0.6)',
+          borderBottom: '1px solid rgba(255,255,255,0.1)',
+          flexShrink: 0
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12, minWidth: 0 }}>
+            <span style={{ fontSize: 20 }}>
+              {mediaType === 'video' ? '🎬' : '🖼️'}
+            </span>
+            <div style={{ overflow: 'hidden' }}>
+              <div style={{
+                fontSize: 14,
+                color: '#fff',
+                fontWeight: 500,
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                whiteSpace: 'nowrap'
+              }}>
+                {asset.title || asset.name}
+              </div>
+              <div style={{
+                fontSize: 11,
+                color: 'rgba(255,255,255,0.5)',
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                whiteSpace: 'nowrap'
+              }}>
+                {formatSize(asset.file_size || asset.size)} • {mediaType === 'video' ? 'Vidéo' : 'Image'}
+              </div>
+            </div>
+          </div>
+          <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
+            <button
+              onClick={toggleFullscreen}
+              style={{
+                background: 'rgba(255,255,255,0.1)',
+                border: 'none',
+                color: '#fff',
+                width: 36,
+                height: 36,
+                borderRadius: 8,
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                fontSize: 18,
+                transition: 'background 0.2s'
+              }}
+              onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(255,255,255,0.2)'}
+              onMouseLeave={(e) => e.currentTarget.style.background = 'rgba(255,255,255,0.1)'}
+              title={isFullscreen ? 'Quitter le plein écran' : 'Plein écran'}
+            >
+              {isFullscreen ? <LiaCompressSolid /> : <LiaExpandSolid />}
+            </button>
+            <button
+              onClick={onClose}
+              style={{
+                background: 'rgba(255,255,255,0.1)',
+                border: 'none',
+                color: '#fff',
+                width: 36,
+                height: 36,
+                borderRadius: 8,
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                fontSize: 24,
+                transition: 'background 0.2s'
+              }}
+              onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(255,0,0,0.3)'}
+              onMouseLeave={(e) => e.currentTarget.style.background = 'rgba(255,255,255,0.1)'}
+              title="Fermer"
+            >
+              ×
+            </button>
+          </div>
+        </div>
+
+        {/* Contenu média */}
+        <div style={{
+          flex: 1,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          padding: '20px',
+          minHeight: 0,
+          position: 'relative'
+        }}>
+          {mediaType === 'video' ? (
+            <video
+              ref={videoRef}
+              src={mediaUrl}
+              controls
+              autoPlay
+              playsInline
+              style={{
+                maxWidth: '100%',
+                maxHeight: '100%',
+                borderRadius: '8px',
+                background: '#000'
+              }}
+              onError={(e) => {
+                console.error('Erreur lecture vidéo:', e);
+              }}
+            >
+              Votre navigateur ne supporte pas la lecture de vidéos.
+            </video>
+          ) : (
+            <img
+              src={mediaUrl}
+              alt={asset.title || asset.name}
+              style={{
+                maxWidth: '100%',
+                maxHeight: '100%',
+                objectFit: 'contain',
+                borderRadius: '8px',
+                background: '#000'
+              }}
+              onError={(e) => {
+                e.target.style.display = 'none';
+                e.target.parentElement.innerHTML = `
+                  <div style="text-align:center;color:#666;">
+                    <div style="font-size:48px;margin-bottom:12px;">🖼️</div>
+                    <div>Impossible de charger l'image</div>
+                  </div>
+                `;
+              }}
+            />
+          )}
+        </div>
+
+        {/* Footer avec raccourcis */}
+        <div style={{
+          padding: '12px 20px',
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          background: 'rgba(0,0,0,0.6)',
+          borderTop: '1px solid rgba(255,255,255,0.1)',
+          flexShrink: 0,
+          fontSize: 12,
+          color: 'rgba(255,255,255,0.4)'
+        }}>
+          <div>
+            {mediaType === 'video' ? '▶️ Lecture en cours' : '👁️ Visualisation'}
+          </div>
+          <div style={{ display: 'flex', gap: 16 }}>
+            <span>⌘ + F: Plein écran</span>
+            <span>ESC: Fermer</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ============ COMPOSANT ZIP CONTENT POPUP ============
 function ZipContentPopup({ files, onClose, onSelectFile }) {
-  // ... (contenu inchangé)
   const groupedFiles = files.reduce((acc, file) => {
     const parts = file.path.split('/');
     const folder = parts.length > 1 ? parts.slice(0, -1).join('/') : 'Racine';
@@ -450,6 +740,10 @@ export default function AssetsPanel({ searchQuery = '' }) {
     duration: 4000
   });
 
+  // État pour le Media Viewer (popup vidéo/image)
+  const [showMediaViewer, setShowMediaViewer] = useState(false);
+  const [selectedMedia, setSelectedMedia] = useState(null);
+
   // Fonction pour afficher une notification
   const showNotification = (type, title, message, duration = 4000) => {
     setNotification({
@@ -540,6 +834,9 @@ export default function AssetsPanel({ searchQuery = '' }) {
 
   // Download
   const [downloadingId, setDownloadingId] = useState(null);
+
+  // Références pour les vidéos
+  const videoRefs = useRef({});
 
   // ============ SYNC SEARCH ============
   useEffect(() => {
@@ -1091,12 +1388,6 @@ export default function AssetsPanel({ searchQuery = '' }) {
         document.body.removeChild(a);
       }, 100);
 
-      showNotification(
-        'success',
-        '✅ Téléchargement réussi',
-        `Le fichier "${fileName}" a été téléchargé avec succès.`
-      );
-
     } catch (err) {
       console.error('Erreur téléchargement:', err);
       showNotification(
@@ -1113,6 +1404,17 @@ export default function AssetsPanel({ searchQuery = '' }) {
   const openAssetPreview = (asset) => {
     if (isZipFile(asset)) {
       openZipPopup(asset);
+      return;
+    }
+
+    // Si c'est une vidéo ou une image, ouvrir le popup Media Viewer
+    const mediaContent = getMediaContent(asset);
+    if (mediaContent.type !== 'none' && mediaContent.url) {
+      const fullUrl = mediaContent.url.startsWith('http') 
+        ? mediaContent.url 
+        : `${API_BASE_URL.replace('/api', '')}${mediaContent.url}`;
+      setSelectedMedia({ asset, mediaUrl: fullUrl, mediaType: mediaContent.type });
+      setShowMediaViewer(true);
       return;
     }
 
@@ -1144,6 +1446,21 @@ export default function AssetsPanel({ searchQuery = '' }) {
       setShowModelViewer(true);
     } else {
       openPreview(asset.title || asset.name);
+    }
+  };
+
+  // Gestion du survol des vidéos
+  const handleVideoHover = (assetId, isHovering) => {
+    const videoElement = videoRefs.current[assetId];
+    if (videoElement) {
+      if (isHovering) {
+        videoElement.play().catch(err => {
+          console.warn('La lecture automatique a été bloquée:', err);
+        });
+      } else {
+        videoElement.pause();
+        videoElement.currentTime = 0;
+      }
     }
   };
 
@@ -1216,6 +1533,19 @@ export default function AssetsPanel({ searchQuery = '' }) {
     <>
       {/* Notification Popup */}
       <NotificationPopup notification={notification} onClose={closeNotification} />
+
+      {/* Media Viewer Popup (pour vidéos et images en grand) */}
+      {showMediaViewer && selectedMedia && (
+        <MediaViewerPopup
+          asset={selectedMedia.asset}
+          mediaUrl={selectedMedia.mediaUrl}
+          mediaType={selectedMedia.mediaType}
+          onClose={() => {
+            setShowMediaViewer(false);
+            setSelectedMedia(null);
+          }}
+        />
+      )}
 
       <div className="tbl-wrap" style={{ background: 'rgba(12,22,40,.8)', border: '1px solid rgba(255,255,255,.06)', borderRadius: 12, overflow: 'hidden' }}>
         <div className="tbl-top" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 18px', flexWrap: 'wrap', gap: 12 }}>
@@ -1427,12 +1757,19 @@ export default function AssetsPanel({ searchQuery = '' }) {
           {paginatedAssets.map((asset) => {
             const is3D = is3DModel(asset);
             const isZIP = isZipFile(asset);
+            const isVideo = isVideoFile(asset);
+            const isImage = isImageFile(asset);
             const isTexture = isTextureFile(asset);
             const isMaterial = isMaterialFile(asset);
             const isHovered = hoveredAssetId === asset.id;
             const canDelete = canDeleteAsset(asset);
             const canEdit = canEditAsset(asset);
             const fileCategory = getFileCategory(asset);
+
+            // Récupération de l'URL du média (vidéo ou image)
+            const mediaContent = getMediaContent(asset);
+            const mediaUrl = mediaContent.url ? `${API_BASE_URL.replace('/api', '')}${mediaContent.url}` : null;
+            const isMedia = mediaContent.type !== 'none' && mediaUrl;
 
             return (
               <div
@@ -1445,12 +1782,29 @@ export default function AssetsPanel({ searchQuery = '' }) {
                   transition: 'transform 0.2s, border-color 0.2s',
                   transform: isHovered ? 'translateY(-4px)' : 'none'
                 }}
-                onMouseEnter={() => setHoveredAssetId(asset.id)}
-                onMouseLeave={() => setHoveredAssetId(null)}
+                onMouseEnter={() => {
+                  setHoveredAssetId(asset.id);
+                  if (isVideo) {
+                    handleVideoHover(asset.id, true);
+                  }
+                }}
+                onMouseLeave={() => {
+                  setHoveredAssetId(null);
+                  if (isVideo) {
+                    handleVideoHover(asset.id, false);
+                  }
+                }}
               >
-                {/* Zone de preview - inchangée */}
+                {/* Zone de preview - Affichage direct de la vidéo ou de l'image */}
                 <div
-                  onClick={() => openAssetPreview(asset)}
+                  onClick={() => {
+                    // Si c'est une vidéo ou une image, ouvrir le popup en grand
+                    if (isVideo || isImage) {
+                      openAssetPreview(asset);
+                    } else {
+                      openAssetPreview(asset);
+                    }
+                  }}
                   style={{
                     height: 180,
                     background: 'rgba(0,0,0,.4)',
@@ -1458,11 +1812,222 @@ export default function AssetsPanel({ searchQuery = '' }) {
                     alignItems: 'center',
                     justifyContent: 'center',
                     position: 'relative',
-                    cursor: 'pointer',
+                    cursor: isVideo || isImage ? 'pointer' : 'pointer',
                     overflow: 'hidden'
                   }}
                 >
-                  {isZIP ? (
+                  {/* VIDÉO - Lecture directe avec survol */}
+           {/* VIDÉO - Lecture directe avec survol */}
+{isVideo && mediaUrl && (
+  <>
+    <video
+      ref={el => { videoRefs.current[asset.id] = el; }}
+      src={mediaUrl}
+      muted
+      loop
+      playsInline
+      preload="metadata"
+      style={{
+        width: '100%',
+        height: '100%',
+        objectFit: 'cover',
+        objectPosition: 'center'
+      }}
+    />
+    <div style={{
+      position: 'absolute',
+      top: 8,
+      right: 8,
+      background: 'rgba(0,0,0,.7)',
+      backdropFilter: 'blur(4px)',
+      padding: '3px 8px',
+      borderRadius: 10,
+      fontSize: 10,
+      color: '#8B5CF6',
+      border: '1px solid rgba(139,92,246,.3)',
+      display: 'flex',
+      alignItems: 'center',
+      gap: 4,
+      zIndex: 2,
+      pointerEvents: 'none'
+    }}>
+      🎬 VIDÉO
+    </div>
+    {isHovered && (
+      <div style={{
+        position: 'absolute',
+        bottom: 12,
+        left: '50%',
+        transform: 'translateX(-50%)',
+        background: 'rgba(0,0,0,.8)',
+        padding: '4px 12px',
+        borderRadius: 16,
+        fontSize: 10,
+        color: '#fff',
+        whiteSpace: 'nowrap',
+        zIndex: 2,
+        pointerEvents: 'none'
+      }}>
+        ▶️ Lecture en cours
+      </div>
+    )}
+    {/* Overlay pour indiquer qu'on peut cliquer pour agrandir */}
+    <div style={{
+      position: 'absolute',
+      bottom: 12,
+      right: 12,
+      background: 'rgba(0,0,0,.7)',
+      padding: '4px 10px',
+      borderRadius: 12,
+      fontSize: 10,
+      color: 'rgba(255,255,255,0.7)',
+      zIndex: 2,
+      pointerEvents: 'none',
+      display: 'flex',
+      alignItems: 'center',
+      gap: 4
+    }}>
+      <LiaExpandSolid size={12} /> Agrandir
+    </div>
+  </>
+)}
+
+                  {/* IMAGE - Affichage direct */}
+                  {isImage && mediaUrl && (
+                    <>
+                      <img
+                        src={mediaUrl}
+                        alt={`Aperçu de ${asset.title || asset.name}`}
+                        style={{
+                          width: '100%',
+                          height: '100%',
+                          objectFit: 'cover',
+                          objectPosition: 'center'
+                        }}
+                        onError={(e) => {
+                          e.target.style.display = 'none';
+                          const parent = e.target.parentElement;
+                          const fallback = parent.querySelector('.image-fallback');
+                          if (fallback) fallback.style.display = 'flex';
+                        }}
+                      />
+                      <div className="image-fallback" style={{ display: 'none', textAlign: 'center' }}>
+                        <div style={{ fontSize: 48, marginBottom: 4 }}>🖼️</div>
+                        <div style={{ fontSize: 11, color: '#3B82F6' }}>Image</div>
+                      </div>
+                      <div style={{
+                        position: 'absolute',
+                        top: 8,
+                        right: 8,
+                        background: 'rgba(0,0,0,.7)',
+                        backdropFilter: 'blur(4px)',
+                        padding: '3px 8px',
+                        borderRadius: 10,
+                        fontSize: 10,
+                        color: '#3B82F6',
+                        border: '1px solid rgba(59,130,246,.3)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 4,
+                        zIndex: 2,
+                        pointerEvents: 'none'
+                      }}>
+                        🖼️ IMAGE
+                      </div>
+                      {/* Overlay pour indiquer qu'on peut cliquer pour agrandir */}
+                      <div style={{
+                        position: 'absolute',
+                        bottom: 12,
+                        right: 12,
+                        background: 'rgba(0,0,0,.7)',
+                        padding: '4px 10px',
+                        borderRadius: 12,
+                        fontSize: 10,
+                        color: 'rgba(255,255,255,0.7)',
+                        zIndex: 2,
+                        pointerEvents: 'none',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 4
+                      }}>
+                        <LiaExpandSolid size={12} /> Agrandir
+                      </div>
+                    </>
+                  )}
+
+                  {/* MODÈLES 3D - avec capture d'écran */}
+                  {is3D && !isVideo && !isImage && (
+                    asset.capture_url ? (
+                      <>
+                        <img
+                          src={`${API_BASE_URL.replace('/api', '')}${asset.capture_url}`}
+                          alt={`Aperçu de ${asset.title || asset.name}`}
+                          style={{
+                            width: '100%',
+                            height: '100%',
+                            objectFit: 'cover',
+                            objectPosition: 'center'
+                          }}
+                          onError={(e) => {
+                            e.target.style.display = 'none';
+                            e.target.parentElement.querySelector('.default-3d-preview').style.display = 'flex';
+                          }}
+                        />
+                        <div className="default-3d-preview" style={{ display: 'none', textAlign: 'center' }}>
+                          <div style={{ fontSize: 48, marginBottom: 4 }}><PiCubeLight /></div>
+                          <div style={{ fontSize: 11, color: '#3b82f6' }}>Modèle 3D</div>
+                        </div>
+                        {isHovered && (
+                          <div style={{
+                            position: 'absolute',
+                            bottom: 12,
+                            left: '50%',
+                            transform: 'translateX(-50%)',
+                            background: 'rgba(0,0,0,.8)',
+                            padding: '4px 12px',
+                            borderRadius: 16,
+                            fontSize: 10,
+                            color: '#10b981',
+                            whiteSpace: 'nowrap',
+                            zIndex: 2
+                          }}>
+                            ✨ Visualiser
+                          </div>
+                        )}
+                      </>
+                    ) : (
+                      <div style={{ textAlign: 'center' }}>
+                        <div style={{ fontSize: 48, marginBottom: 4 }}><PiCubeLight /></div>
+                        <div style={{ fontSize: 11, color: '#3b82f6' }}>
+                          Modèle 3D
+                          {asset.ext && (
+                            <span style={{ fontSize: 9, display: 'block', color: '#666' }}>
+                              {asset.ext.toUpperCase()}
+                            </span>
+                          )}
+                        </div>
+                        {isHovered && (
+                          <div style={{
+                            position: 'absolute',
+                            bottom: 12,
+                            left: '50%',
+                            transform: 'translateX(-50%)',
+                            background: 'rgba(0,0,0,.8)',
+                            padding: '4px 12px',
+                            borderRadius: 16,
+                            fontSize: 10,
+                            color: '#10b981',
+                            whiteSpace: 'nowrap'
+                          }}>
+                            ✨ Visualiser
+                          </div>
+                        )}
+                      </div>
+                    )
+                  )}
+
+                  {/* ARCHIVES ZIP */}
+                  {isZIP && (
                     asset.capture_url ? (
                       <>
                         <img
@@ -1542,75 +2107,10 @@ export default function AssetsPanel({ searchQuery = '' }) {
                         )}
                       </div>
                     )
-                  ) : is3D ? (
-                    asset.capture_url ? (
-                      <>
-                        <img
-                          src={`${API_BASE_URL.replace('/api', '')}${asset.capture_url}`}
-                          alt={`Aperçu de ${asset.title || asset.name}`}
-                          style={{
-                            width: '100%',
-                            height: '100%',
-                            objectFit: 'cover',
-                            objectPosition: 'center'
-                          }}
-                          onError={(e) => {
-                            e.target.style.display = 'none';
-                            e.target.parentElement.querySelector('.default-3d-preview').style.display = 'flex';
-                          }}
-                        />
-                        <div className="default-3d-preview" style={{ display: 'none', textAlign: 'center' }}>
-                          <div style={{ fontSize: 48, marginBottom: 4 }}><PiCubeLight /></div>
-                          <div style={{ fontSize: 11, color: '#3b82f6' }}>Modèle 3D</div>
-                        </div>
-                        {isHovered && (
-                          <div style={{
-                            position: 'absolute',
-                            bottom: 12,
-                            left: '50%',
-                            transform: 'translateX(-50%)',
-                            background: 'rgba(0,0,0,.8)',
-                            padding: '4px 12px',
-                            borderRadius: 16,
-                            fontSize: 10,
-                            color: '#10b981',
-                            whiteSpace: 'nowrap',
-                            zIndex: 2
-                          }}>
-                            ✨ Visualiser
-                          </div>
-                        )}
-                      </>
-                    ) : (
-                      <div style={{ textAlign: 'center' }}>
-                        <div style={{ fontSize: 48, marginBottom: 4 }}><PiCubeLight /></div>
-                        <div style={{ fontSize: 11, color: '#3b82f6' }}>
-                          Modèle 3D
-                          {asset.ext && (
-                            <span style={{ fontSize: 9, display: 'block', color: '#666' }}>
-                              {asset.ext.toUpperCase()}
-                            </span>
-                          )}
-                        </div>
-                        {isHovered && (
-                          <div style={{
-                            position: 'absolute',
-                            bottom: 12,
-                            left: '50%',
-                            transform: 'translateX(-50%)',
-                            background: 'rgba(0,0,0,.8)',
-                            padding: '4px 12px',
-                            borderRadius: 16,
-                            fontSize: 10,
-                            color: '#10b981',
-                            whiteSpace: 'nowrap'
-                          }}>
-                            ✨ Visualiser
-                          </div>
-                        )}
-                      </div>
-                    )
-                  ) : isTexture ? (
+                  )}
+
+                  {/* TEXTURES */}
+                  {isTexture && !isVideo && !isImage && !is3D && !isZIP && (
                     asset.capture_url ? (
                       <img
                         src={`${API_BASE_URL.replace('/api', '')}${asset.capture_url}`}
@@ -1628,12 +2128,18 @@ export default function AssetsPanel({ searchQuery = '' }) {
                         <div style={{ fontSize: 11, color: '#3B82F6' }}>Texture</div>
                       </div>
                     )
-                  ) : isMaterial ? (
+                  )}
+
+                  {/* MATÉRIAUX */}
+                  {isMaterial && !isVideo && !isImage && !is3D && !isZIP && (
                     <div style={{ textAlign: 'center' }}>
                       <div style={{ fontSize: 48, marginBottom: 4 }}>📄</div>
                       <div style={{ fontSize: 11, color: '#8B5CF6' }}>Matériau</div>
                     </div>
-                  ) : (
+                  )}
+
+                  {/* AUTRES FICHIERS */}
+                  {!isVideo && !isImage && !is3D && !isZIP && !isTexture && !isMaterial && (
                     asset.capture_url ? (
                       <img
                         src={`${API_BASE_URL.replace('/api', '')}${asset.capture_url}`}
@@ -1663,6 +2169,8 @@ export default function AssetsPanel({ searchQuery = '' }) {
                   <div style={{ fontSize: 9, marginBottom: 6, color: getFileColor(asset) }}>
                     {getFileIcon(asset)} {fileCategory === '3d_model' ? 'Modèle 3D' : 
                        fileCategory === 'archive' ? 'Archive 3D' :
+                       fileCategory === 'video' ? 'Vidéo' :
+                       fileCategory === 'image' ? 'Image' :
                        fileCategory === 'texture' ? 'Texture' :
                        fileCategory === 'material' ? 'Matériau' : 'Fichier'}
                   </div>
@@ -1704,6 +2212,28 @@ export default function AssetsPanel({ searchQuery = '' }) {
                         🎮 3D
                       </span>
                     )}
+                    {isVideo && (
+                      <span style={{
+                        fontSize: 8,
+                        background: 'rgba(139,92,246,.15)',
+                        color: '#8B5CF6',
+                        padding: '1px 6px',
+                        borderRadius: 8
+                      }}>
+                        🎬 Vidéo
+                      </span>
+                    )}
+                    {isImage && !isTexture && (
+                      <span style={{
+                        fontSize: 8,
+                        background: 'rgba(59,130,246,.15)',
+                        color: '#3B82F6',
+                        padding: '1px 6px',
+                        borderRadius: 8
+                      }}>
+                        🖼️ Image
+                      </span>
+                    )}
                   </div>
 
                   <div style={{
@@ -1716,33 +2246,33 @@ export default function AssetsPanel({ searchQuery = '' }) {
                       onClick={() => openAssetPreview(asset)}
                       style={{
                         flex: 1,
-                        background: is3D || isZIP ? 'rgba(59,130,246,.15)' : 'rgba(255,255,255,.05)',
+                        background: is3D || isZIP || isVideo || isImage ? 'rgba(59,130,246,.15)' : 'rgba(255,255,255,.05)',
                         border: 'none',
                         padding: '4px 6px',
                         borderRadius: 4,
-                        color: is3D || isZIP ? '#3B82F6' : '#666',
-                        cursor: is3D || isZIP ? 'pointer' : 'default',
+                        color: is3D || isZIP || isVideo || isImage ? '#3B82F6' : '#666',
+                        cursor: is3D || isZIP || isVideo || isImage ? 'pointer' : 'default',
                         fontSize: 10,
                         display: 'flex',
                         alignItems: 'center',
                         justifyContent: 'center',
                         gap: 4,
                         transition: 'background 0.2s',
-                        opacity: is3D || isZIP ? 1 : 0.5
+                        opacity: is3D || isZIP || isVideo || isImage ? 1 : 0.5
                       }}
                       onMouseEnter={(e) => {
-                        if (is3D || isZIP) {
+                        if (is3D || isZIP || isVideo || isImage) {
                           e.currentTarget.style.background = 'rgba(59,130,246,.25)';
                         }
                       }}
                       onMouseLeave={(e) => {
-                        if (is3D || isZIP) {
+                        if (is3D || isZIP || isVideo || isImage) {
                           e.currentTarget.style.background = 'rgba(59,130,246,.15)';
                         }
                       }}
                     >
                       <LiaEyeSolid size={12} />
-                      {isZIP ? '📂' : 'Voir'}
+                      {isZIP ? '📂' : isVideo ? '▶️' : isImage ? '👁️' : 'Voir'}
                     </button>
                     <button
                       onClick={() => handleDownload(asset)}

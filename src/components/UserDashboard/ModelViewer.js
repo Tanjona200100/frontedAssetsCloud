@@ -1,5 +1,5 @@
 // src/components/UserDashboard/ModelViewerThree.jsx
-// Version avec normalisation de la taille des modèles
+// Version avec gestion robuste des matériaux Three.js
 
 import React, { useState, useEffect, useCallback, useRef, forwardRef, useImperativeHandle, Suspense } from 'react';
 import { Canvas, useFrame } from '@react-three/fiber';
@@ -18,40 +18,32 @@ const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:5000';
 const DEFAULT_CAMERA_PADDING = 1.8;
 const MIN_CAMERA_DISTANCE = 1;
 const MAX_CAMERA_DISTANCE = 30;
-const TARGET_MODEL_SIZE = 2.5; // Taille cible pour le modèle (en unités 3D)
-const MAX_MODEL_SIZE = 50; // Taille maximale avant normalisation
+const TARGET_MODEL_SIZE = 2.5;
+const MAX_MODEL_SIZE = 50;
 
 // ============ FONCTION DE NORMALISATION DE LA TAILLE ============
 function normalizeModelSize(model, targetSize = TARGET_MODEL_SIZE) {
-  if (!model) return;
+  if (!model) return null;
 
   try {
-    // Calculer la boîte englobante
     const box = new THREE.Box3().setFromObject(model);
     const size = box.getSize(new THREE.Vector3());
     const center = box.getCenter(new THREE.Vector3());
     
-    // Trouver la plus grande dimension
     const maxDim = Math.max(size.x, size.y, size.z);
     
-    // Si le modèle est trop grand ou trop petit, le normaliser
     if (maxDim > MAX_MODEL_SIZE || maxDim < 0.01) {
       const scale = targetSize / maxDim;
       console.log(`📏 Normalisation du modèle: taille=${maxDim.toFixed(2)}, facteur=${scale.toFixed(4)}`);
       
-      // Appliquer le facteur d'échelle
       model.scale.set(scale, scale, scale);
       
-      // Recalculer la boîte englobante après mise à l'échelle
       const newBox = new THREE.Box3().setFromObject(model);
       const newCenter = newBox.getCenter(new THREE.Vector3());
-      
-      // Centrer le modèle
       model.position.sub(newCenter);
       
       return { scale, originalSize: maxDim, newSize: maxDim * scale };
     } else {
-      // Le modèle est déjà à une taille raisonnable, on le centre juste
       model.position.sub(center);
       return { scale: 1, originalSize: maxDim, newSize: maxDim };
     }
@@ -191,53 +183,73 @@ function calculateModelStats(model) {
   const materials = new Set();
   const textures = new Set();
 
-  model.traverse((child) => {
-    if (child.isMesh) {
-      meshes++;
-      const geom = child.geometry;
-      if (geom && geom.attributes && geom.attributes.position) {
-        vertices += geom.attributes.position.count;
-      }
-      if (geom && geom.index) {
-        triangles += geom.index.count / 3;
-      } else if (geom && geom.attributes && geom.attributes.position) {
-        triangles += geom.attributes.position.count / 3;
-      }
+  if (!model) return null;
 
-      if (child.material) {
-        const mats = Array.isArray(child.material) ? child.material : [child.material];
-        mats.forEach(mat => {
-          if (mat && mat.isMaterial) {
-            materials.add(mat.name || 'Material');
-            const textureProps = ['map', 'normalMap', 'roughnessMap', 'metalnessMap', 'emissiveMap', 'alphaMap', 'bumpMap', 'displacementMap', 'specularMap'];
-            textureProps.forEach(prop => {
-              if (mat[prop] && mat[prop].isTexture && mat[prop].image) {
-                textures.add(mat[prop].name || 'Texture');
-              }
-            });
-          }
-        });
+  try {
+    model.traverse((child) => {
+      if (child.isMesh) {
+        meshes++;
+        const geom = child.geometry;
+        if (geom && geom.attributes && geom.attributes.position) {
+          vertices += geom.attributes.position.count;
+        }
+        if (geom && geom.index) {
+          triangles += geom.index.count / 3;
+        } else if (geom && geom.attributes && geom.attributes.position) {
+          triangles += geom.attributes.position.count / 3;
+        }
+
+        if (child.material) {
+          const mats = Array.isArray(child.material) ? child.material : [child.material];
+          mats.forEach(mat => {
+            if (mat && mat.isMaterial) {
+              materials.add(mat.name || 'Material');
+              const textureProps = ['map', 'normalMap', 'roughnessMap', 'metalnessMap', 'emissiveMap', 'alphaMap', 'bumpMap', 'displacementMap', 'specularMap'];
+              textureProps.forEach(prop => {
+                if (mat[prop] && mat[prop].isTexture && mat[prop].image) {
+                  textures.add(mat[prop].name || 'Texture');
+                }
+              });
+            }
+          });
+        }
       }
-    }
-  });
+    });
+  } catch (error) {
+    console.warn('Erreur lors du calcul des statistiques:', error);
+    return null;
+  }
 
-  const box = new THREE.Box3().setFromObject(model);
-  const size = box.getSize(new THREE.Vector3());
-  const center = box.getCenter(new THREE.Vector3());
+  try {
+    const box = new THREE.Box3().setFromObject(model);
+    const size = box.getSize(new THREE.Vector3());
+    const center = box.getCenter(new THREE.Vector3());
 
-  return {
-    vertices: Math.round(vertices),
-    triangles: Math.round(triangles),
-    meshes,
-    materials: materials.size,
-    textures: textures.size,
-    dimensions: {
-      width: size.x,
-      height: size.y,
-      depth: size.z
-    },
-    center: [center.x, center.y, center.z]
-  };
+    return {
+      vertices: Math.round(vertices),
+      triangles: Math.round(triangles),
+      meshes,
+      materials: materials.size,
+      textures: textures.size,
+      dimensions: {
+        width: size.x,
+        height: size.y,
+        depth: size.z
+      },
+      center: [center.x, center.y, center.z]
+    };
+  } catch (error) {
+    console.warn('Erreur lors du calcul des dimensions:', error);
+    return {
+      vertices: Math.round(vertices),
+      triangles: Math.round(triangles),
+      meshes,
+      materials: materials.size,
+      textures: textures.size,
+      dimensions: { width: 0, height: 0, depth: 0 },
+      center: [0, 0, 0]
+    };
+  }
 }
 
 // ============ FONCTION CAMÉRA OPTIMISÉE ============
@@ -278,26 +290,73 @@ function fitCameraToModel(camera, controls, model, padding = DEFAULT_CAMERA_PADD
   }
 }
 
-// ============ VALIDATION DES MATÉRIAUX ============
+// ============ FONCTION DE RÉPARATION DES MATÉRIAUX ============
+function sanitizeMaterial(material) {
+  if (!material) return null;
+  
+  // Si ce n'est pas un matériau valide, retourner null
+  if (!material.isMaterial) {
+    console.warn('Matériau invalide, création d\'un nouveau matériau par défaut');
+    return new THREE.MeshStandardMaterial({
+      color: 0xcccccc,
+      roughness: 0.5,
+      metalness: 0.1
+    });
+  }
 
-function isValidMaterial(material) {
-  if (!material) return false;
-  if (!material.isMaterial) return false;
-  if (material.type === 'undefined' || material.type === 'null') return false;
-  return true;
-}
+  try {
+    // Vérifier et réparer les textures
+    const textureProps = ['map', 'normalMap', 'roughnessMap', 'metalnessMap', 'emissiveMap', 'alphaMap', 'bumpMap', 'displacementMap', 'specularMap'];
+    
+    for (const prop of textureProps) {
+      if (material[prop]) {
+        // Vérifier si la texture est valide
+        if (!material[prop].isTexture) {
+          console.warn(`Texture ${prop} invalide, suppression`);
+          material[prop] = null;
+          continue;
+        }
+        
+        // Vérifier si l'image de la texture est chargée
+        if (material[prop].image && !material[prop].image.width) {
+          console.warn(`Texture ${prop} pas encore chargée, tentative de chargement...`);
+          // Laisser la texture, elle pourrait se charger plus tard
+        }
+      }
+    }
 
-function isValidTexture(texture) {
-  if (!texture) return false;
-  if (!texture.isTexture) return false;
-  if (!texture.image) return false;
-  if (!texture.image.width || !texture.image.height) return false;
-  return true;
+    // S'assurer que les propriétés de couleur sont valides
+    if (material.color && !material.color.isColor) {
+      material.color = new THREE.Color(material.color);
+    }
+
+    if (material.emissive && !material.emissive.isColor) {
+      material.emissive = new THREE.Color(material.emissive);
+    }
+
+    // Définir des valeurs par défaut pour les propriétés manquantes
+    if (material.opacity === undefined) material.opacity = 1;
+    if (material.transparent === undefined) material.transparent = false;
+    if (material.side === undefined) material.side = THREE.FrontSide;
+    if (material.roughness === undefined) material.roughness = 0.5;
+    if (material.metalness === undefined) material.metalness = 0.1;
+
+    material.needsUpdate = true;
+    return material;
+  } catch (error) {
+    console.warn('Erreur lors du nettoyage du matériau:', error);
+    return new THREE.MeshStandardMaterial({
+      color: 0xcccccc,
+      roughness: 0.5,
+      metalness: 0.1
+    });
+  }
 }
 
 // ============ TOKENISATION ET DICTIONNAIRE DE SYNONYMES ============
 
 function tokenizeFilename(filename) {
+  if (!filename) return [];
   const nameWithoutExt = filename.split('.').slice(0, -1).join('.');
   return nameWithoutExt
     .toLowerCase()
@@ -318,11 +377,13 @@ const TEXTURE_TYPE_SYNONYMS = {
 const PACKED_TEXTURE_HINTS = ['orm', 'rma', 'mra', 'arm', 'packed', 'mixmap'];
 
 function isPackedTexture(filename) {
+  if (!filename) return false;
   const f = filename.toLowerCase();
   return PACKED_TEXTURE_HINTS.some(hint => f.includes(hint));
 }
 
 function scoreTextureForType(filename, contextTokens, type) {
+  if (!filename) return 0;
   const fileTokens = tokenizeFilename(filename);
   const synonyms = TEXTURE_TYPE_SYNONYMS[type] || [];
 
@@ -402,6 +463,7 @@ async function applyZipTexturesToThree(model, virtualFS) {
   const textureCache = new Map();
 
   const loadTexture = async (entry) => {
+    if (!entry) return null;
     if (textureCache.has(entry.path)) {
       return textureCache.get(entry.path);
     }
@@ -432,11 +494,19 @@ async function applyZipTexturesToThree(model, virtualFS) {
     if (child.isMesh && child.material) {
       const mats = Array.isArray(child.material) ? child.material : [child.material];
       mats.forEach(mat => {
-        if (!materialIndex.has(mat)) {
-          materialIndex.set(mat, materialEntries.length);
-          materialEntries.push({ material: mat, meshes: [] });
+        if (mat && !materialIndex.has(mat)) {
+          const sanitized = sanitizeMaterial(mat);
+          if (sanitized) {
+            materialIndex.set(mat, materialEntries.length);
+            materialEntries.push({ material: sanitized, meshes: [] });
+          }
         }
-        materialEntries[materialIndex.get(mat)].meshes.push(child);
+        if (mat) {
+          const idx = materialIndex.get(mat);
+          if (idx !== undefined) {
+            materialEntries[idx].meshes.push(child);
+          }
+        }
       });
     }
   });
@@ -455,35 +525,50 @@ async function applyZipTexturesToThree(model, virtualFS) {
     if (isPhong) {
       console.log(`🔄 Conversion de MeshPhongMaterial en MeshStandardMaterial`);
 
-      targetMaterial = new THREE.MeshStandardMaterial();
-      targetMaterial.color.copy(material.color);
-      if (material.map) targetMaterial.map = material.map;
-      if (material.emissive) targetMaterial.emissive.copy(material.emissive);
-      targetMaterial.emissiveIntensity = material.emissiveIntensity || 0;
-      targetMaterial.opacity = material.opacity ?? 1;
-      targetMaterial.transparent = material.transparent || false;
-      targetMaterial.side = material.side || THREE.FrontSide;
-      targetMaterial.name = material.name || '';
+      try {
+        targetMaterial = new THREE.MeshStandardMaterial();
+        
+        // Copier les propriétés de base
+        if (material.color) targetMaterial.color.copy(material.color);
+        if (material.emissive) targetMaterial.emissive.copy(material.emissive);
+        targetMaterial.emissiveIntensity = material.emissiveIntensity || 0;
+        targetMaterial.opacity = material.opacity ?? 1;
+        targetMaterial.transparent = material.transparent || false;
+        targetMaterial.side = material.side || THREE.FrontSide;
+        targetMaterial.name = material.name || '';
 
-      if (material.specular) {
-        const specularIntensity = material.specular.r;
-        targetMaterial.metalness = 0.0;
-        targetMaterial.roughness = Math.max(0.1, 1 - Math.min(specularIntensity * 0.8, 0.9));
-      }
-      if (material.shininess !== undefined) {
-        targetMaterial.roughness = Math.max(0.1, 1 - Math.min(material.shininess / 100, 0.9));
-      }
-      if (material.specularMap) {
-        targetMaterial.roughnessMap = material.specularMap;
-      }
-      if (material.bumpMap) {
-        targetMaterial.normalMap = material.bumpMap;
-        if (material.bumpScale !== undefined) {
-          targetMaterial.normalScale = new THREE.Vector2(material.bumpScale, material.bumpScale);
+        // Convertir specular en roughness/metalness
+        if (material.specular && material.specular.isColor) {
+          const specularIntensity = material.specular.r;
+          targetMaterial.metalness = 0.0;
+          targetMaterial.roughness = Math.max(0.1, 1 - Math.min(specularIntensity * 0.8, 0.9));
         }
-      }
+        if (material.shininess !== undefined) {
+          targetMaterial.roughness = Math.max(0.1, 1 - Math.min(material.shininess / 100, 0.9));
+        }
 
-      console.log(`  ✅ Matériau converti en MeshStandardMaterial`);
+        // Copier les textures existantes
+        if (material.map && material.map.isTexture) targetMaterial.map = material.map;
+        if (material.specularMap && material.specularMap.isTexture) targetMaterial.roughnessMap = material.specularMap;
+        if (material.bumpMap && material.bumpMap.isTexture) {
+          targetMaterial.normalMap = material.bumpMap;
+          if (material.bumpScale !== undefined) {
+            targetMaterial.normalScale = new THREE.Vector2(material.bumpScale, material.bumpScale);
+          }
+        }
+
+        // Nettoyer le nouveau matériau
+        targetMaterial = sanitizeMaterial(targetMaterial) || targetMaterial;
+        
+        console.log(`  ✅ Matériau converti en MeshStandardMaterial`);
+      } catch (error) {
+        console.warn('Erreur lors de la conversion du matériau:', error);
+        targetMaterial = new THREE.MeshStandardMaterial({
+          color: 0xcccccc,
+          roughness: 0.5,
+          metalness: 0.1
+        });
+      }
     }
 
     const materialName = targetMaterial.name || material.name || '';
@@ -504,13 +589,14 @@ async function applyZipTexturesToThree(model, virtualFS) {
     const pendingMaps = {};
 
     for (const [prop, match] of Object.entries(assignment)) {
+      // Vérifier si la propriété est déjà définie et valide
       if (targetMaterial[prop] && targetMaterial[prop].isTexture) {
         console.log(`    ⏭️ ${prop} déjà défini, ignoré`);
         continue;
       }
 
       const texture = await loadTexture(match);
-      if (texture) {
+      if (texture && texture.isTexture) {
         pendingMaps[prop] = texture;
         texturesLoaded++;
         usedTextures.add(match.path);
@@ -524,15 +610,32 @@ async function applyZipTexturesToThree(model, virtualFS) {
       console.log(`  ⚠️ Aucune texture trouvée pour ce matériau`);
     }
 
-    Object.assign(targetMaterial, pendingMaps);
-    targetMaterial.needsUpdate = true;
+    // Appliquer les textures
+    try {
+      for (const [prop, texture] of Object.entries(pendingMaps)) {
+        if (texture && texture.isTexture) {
+          targetMaterial[prop] = texture;
+        }
+      }
+      targetMaterial.needsUpdate = true;
+    } catch (error) {
+      console.warn('Erreur lors de l\'application des textures:', error);
+    }
 
-    if (meshes.length === 1) {
-      meshes[0].material = targetMaterial;
-    } else {
-      meshes.forEach(mesh => {
-        mesh.material = targetMaterial.clone();
-      });
+    // Assigner le matériau aux meshes
+    try {
+      if (meshes.length === 1) {
+        meshes[0].material = targetMaterial;
+      } else {
+        meshes.forEach(mesh => {
+          if (mesh) {
+            const clonedMat = targetMaterial.clone();
+            mesh.material = clonedMat;
+          }
+        });
+      }
+    } catch (error) {
+      console.warn('Erreur lors de l\'assignation du matériau:', error);
     }
 
     console.log('');
@@ -545,13 +648,20 @@ async function applyZipTexturesToThree(model, virtualFS) {
 // ============ CHARGEMENT DU MODÈLE AVEC VFS ============
 
 async function loadModelFromZip(zipFile, virtualFS, selectedFile) {
+  if (!zipFile || !zipFile.files) {
+    throw new Error('Fichier ZIP invalide');
+  }
+
   let modelFile = selectedFile;
   let modelFormat = null;
+
+  const fileKeys = Object.keys(zipFile.files);
+  console.log('📁 Fichiers dans le ZIP:', fileKeys);
 
   if (!modelFile) {
     const priority = ['glb', 'gltf', 'fbx', 'obj', 'stl'];
     for (const ext of priority) {
-      const found = Object.keys(zipFile.files).find(f => 
+      const found = fileKeys.find(f => 
         f.toLowerCase().endsWith(`.${ext}`) && !zipFile.files[f].dir
       );
       if (found) {
@@ -602,7 +712,7 @@ async function loadModelFromZip(zipFile, virtualFS, selectedFile) {
       }
 
       case 'obj': {
-        const mtlFiles = Object.keys(zipFile.files).filter(f => 
+        const mtlFiles = fileKeys.filter(f => 
           f.toLowerCase().endsWith('.mtl') && !zipFile.files[f].dir
         );
 
@@ -651,6 +761,21 @@ async function loadModelFromZip(zipFile, virtualFS, selectedFile) {
 
     URL.revokeObjectURL(fileUrl);
 
+    // Nettoyer les matériaux du modèle
+    if (model) {
+      model.traverse((child) => {
+        if (child.isMesh && child.material) {
+          const mats = Array.isArray(child.material) ? child.material : [child.material];
+          const sanitizedMats = mats.map(mat => sanitizeMaterial(mat)).filter(Boolean);
+          if (sanitizedMats.length === 1) {
+            child.material = sanitizedMats[0];
+          } else if (sanitizedMats.length > 1) {
+            child.material = sanitizedMats;
+          }
+        }
+      });
+    }
+
     // Normalisation de la taille du modèle
     const normalizationResult = normalizeModelSize(model, TARGET_MODEL_SIZE);
     console.log('📏 Résultat de la normalisation:', normalizationResult);
@@ -675,14 +800,18 @@ function AnimationController({ model, onAnimationChange }) {
     if (!model) return;
 
     let anims = [];
-    if (model.userData.animations) {
-      anims = model.userData.animations;
-    } else {
-      model.traverse((child) => {
-        if (child.animations && child.animations.length > 0) {
-          anims = child.animations;
-        }
-      });
+    try {
+      if (model.userData.animations) {
+        anims = model.userData.animations;
+      } else {
+        model.traverse((child) => {
+          if (child.animations && child.animations.length > 0) {
+            anims = child.animations;
+          }
+        });
+      }
+    } catch (error) {
+      console.warn('Erreur lors de la récupération des animations:', error);
     }
 
     setAnimations(anims);
@@ -695,28 +824,36 @@ function AnimationController({ model, onAnimationChange }) {
   const playAnimation = (animation) => {
     if (!model) return;
 
-    if (mixerRef.current) {
-      mixerRef.current.stopAllAction();
-      mixerRef.current = null;
-    }
+    try {
+      if (mixerRef.current) {
+        mixerRef.current.stopAllAction();
+        mixerRef.current = null;
+      }
 
-    if (!animation) {
-      setIsPlaying(false);
-      setCurrentAnimation(null);
-      return;
-    }
+      if (!animation) {
+        setIsPlaying(false);
+        setCurrentAnimation(null);
+        return;
+      }
 
-    mixerRef.current = new THREE.AnimationMixer(model);
-    const action = mixerRef.current.clipAction(animation);
-    action.play();
-    setCurrentAnimation(animation);
-    setIsPlaying(true);
-    onAnimationChange?.(animation);
+      mixerRef.current = new THREE.AnimationMixer(model);
+      const action = mixerRef.current.clipAction(animation);
+      action.play();
+      setCurrentAnimation(animation);
+      setIsPlaying(true);
+      onAnimationChange?.(animation);
+    } catch (error) {
+      console.warn('Erreur lors de la lecture de l\'animation:', error);
+    }
   };
 
   useFrame((state, delta) => {
     if (mixerRef.current && isPlaying) {
-      mixerRef.current.update(delta);
+      try {
+        mixerRef.current.update(delta);
+      } catch (error) {
+        console.warn('Erreur lors de la mise à jour de l\'animation:', error);
+      }
     }
   });
 
@@ -823,27 +960,35 @@ function WebGLErrorFallback({ error, onRetry }) {
 function disposeThreeObject(obj) {
   if (!obj) return;
   
-  obj.traverse((child) => {
-    if (child.isMesh) {
-      if (child.geometry) {
-        child.geometry.dispose();
-      }
-      if (child.material) {
-        const mats = Array.isArray(child.material) ? child.material : [child.material];
-        mats.forEach(mat => {
-          if (mat && mat.isMaterial) {
-            const textureProps = ['map', 'normalMap', 'roughnessMap', 'metalnessMap', 'emissiveMap', 'alphaMap', 'bumpMap', 'displacementMap', 'specularMap'];
-            textureProps.forEach(prop => {
-              if (mat[prop] && mat[prop].isTexture) {
-                mat[prop].dispose();
+  try {
+    obj.traverse((child) => {
+      if (child.isMesh) {
+        if (child.geometry) {
+          child.geometry.dispose();
+        }
+        if (child.material) {
+          const mats = Array.isArray(child.material) ? child.material : [child.material];
+          mats.forEach(mat => {
+            if (mat && mat.isMaterial) {
+              try {
+                const textureProps = ['map', 'normalMap', 'roughnessMap', 'metalnessMap', 'emissiveMap', 'alphaMap', 'bumpMap', 'displacementMap', 'specularMap'];
+                textureProps.forEach(prop => {
+                  if (mat[prop] && mat[prop].isTexture) {
+                    mat[prop].dispose();
+                  }
+                });
+                mat.dispose();
+              } catch (error) {
+                // Ignorer les erreurs de nettoyage
               }
-            });
-            mat.dispose();
-          }
-        });
+            }
+          });
+        }
       }
-    }
-  });
+    });
+  } catch (error) {
+    console.warn('Erreur lors du nettoyage:', error);
+  }
 }
 
 // ============ COMPOSANT MODÈLE 3D ============
@@ -865,7 +1010,6 @@ const ThreeModelLoader = forwardRef(function ThreeModelLoader(
   const [retryCount, setRetryCount] = useState(0);
   const virtualFSRef = useRef(null);
   const [downloadError, setDownloadError] = useState(null);
-  const [canvasReady, setCanvasReady] = useState(false);
   const [normalizationInfo, setNormalizationInfo] = useState(null);
 
   useImperativeHandle(ref, () => ({
@@ -1084,12 +1228,22 @@ const ThreeModelLoader = forwardRef(function ThreeModelLoader(
             console.log('📦 Décompression du ZIP...');
             const zipFile = await JSZip.loadAsync(blob);
             
+            if (!zipFile || !zipFile.files) {
+              throw new Error('Le fichier ZIP est invalide ou corrompu');
+            }
+
             const virtualFS = new VirtualFileSystem();
-            zipFile.forEach((relativePath, file) => {
+            
+            const fileKeys = Object.keys(zipFile.files);
+            console.log(`📁 ${fileKeys.length} fichiers trouvés dans le ZIP`);
+            
+            for (const relativePath of fileKeys) {
+              const file = zipFile.files[relativePath];
               if (!file.dir) {
                 virtualFS.addFile(relativePath, file);
               }
-            });
+            }
+
             virtualFSRef.current = virtualFS;
 
             console.log('📁 Fichiers dans le ZIP:');
@@ -1185,7 +1339,21 @@ const ThreeModelLoader = forwardRef(function ThreeModelLoader(
               throw new Error(`Format non supporté: ${ext}`);
           }
 
-          // Normalisation de la taille du modèle
+          // Nettoyer les matériaux du modèle
+          if (modelData) {
+            modelData.traverse((child) => {
+              if (child.isMesh && child.material) {
+                const mats = Array.isArray(child.material) ? child.material : [child.material];
+                const sanitizedMats = mats.map(mat => sanitizeMaterial(mat)).filter(Boolean);
+                if (sanitizedMats.length === 1) {
+                  child.material = sanitizedMats[0];
+                } else if (sanitizedMats.length > 1) {
+                  child.material = sanitizedMats;
+                }
+              }
+            });
+          }
+
           const normalizationResult = normalizeModelSize(modelData, TARGET_MODEL_SIZE);
           console.log('📏 Résultat de la normalisation:', normalizationResult);
 
@@ -1244,7 +1412,6 @@ const ThreeModelLoader = forwardRef(function ThreeModelLoader(
           cameraRef.current = camera;
           scene.background = new THREE.Color('#f0f0f0');
           gl.setClearColor('#f0f0f0');
-          setCanvasReady(true);
         }}
         onError={(error) => {
           console.error('Canvas error:', error);
@@ -1330,12 +1497,12 @@ const ThreeModelLoader = forwardRef(function ThreeModelLoader(
           border: '1px solid rgba(255,255,255,0.1)',
           zIndex: 5
         }}>
-          <div>Sommets: {stats.vertices.toLocaleString()}</div>
-          <div>Triangles: {stats.triangles.toLocaleString()}</div>
-          <div>Matériaux: {stats.materials}</div>
-          <div>Textures: {stats.textures}</div>
+          <div>Sommets: {stats.vertices?.toLocaleString() || 0}</div>
+          <div>Triangles: {stats.triangles?.toLocaleString() || 0}</div>
+          <div>Matériaux: {stats.materials || 0}</div>
+          <div>Textures: {stats.textures || 0}</div>
           <div style={{ color: '#3B82F6', fontSize: 10 }}>
-            {stats.dimensions.width.toFixed(2)} × {stats.dimensions.height.toFixed(2)} × {stats.dimensions.depth.toFixed(2)}
+            {stats.dimensions?.width?.toFixed(2) || 0} × {stats.dimensions?.height?.toFixed(2) || 0} × {stats.dimensions?.depth?.toFixed(2) || 0}
           </div>
           {normalizationInfo && normalizationInfo.scale !== 1 && (
             <div style={{ color: '#F59E0B', fontSize: 9, marginTop: 2 }}>

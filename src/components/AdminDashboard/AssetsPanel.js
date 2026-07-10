@@ -1,6 +1,6 @@
 // components/AdminDashboard/AssetsPanel.jsx
 import { useState, useEffect, useCallback, useRef } from "react";
-import { LiaEyeSolid, LiaDownloadSolid, LiaTrashAltSolid, LiaLockSolid, LiaGlobeSolid, LiaImageSolid, LiaUserSolid, LiaFolderOpen, LiaTagSolid } from 'react-icons/lia';
+import { LiaEyeSolid, LiaDownloadSolid, LiaTrashAltSolid, LiaLockSolid, LiaGlobeSolid, LiaImageSolid, LiaUserSolid, LiaFolderOpen, LiaTagSolid, LiaExpandSolid, LiaCompressSolid } from 'react-icons/lia';
 import { PiCubeLight } from "react-icons/pi";
 import { FaRegFile } from "react-icons/fa6";
 import { RiDossierFill } from "react-icons/ri";
@@ -73,6 +73,38 @@ const is3DModel = (asset) => {
          SUPPORTED_3D_FORMATS.some(format => name?.endsWith(`.${format}`));
 };
 
+const isVideoFile = (asset) => {
+  const ext = asset.ext?.toLowerCase().replace(/^\./, '');
+  const fileType = asset.file_type?.toLowerCase();
+  const name = asset.name?.toLowerCase();
+  
+  return fileType === 'video' ||
+         fileType === 'mp4' ||
+         fileType === 'video/mp4' ||
+         ['mp4', 'webm', 'mov', 'avi', 'mkv', 'm4v', 'mpg', 'mpeg', 'wmv', 'flv'].includes(ext) ||
+         name?.endsWith('.mp4') ||
+         name?.endsWith('.webm') ||
+         name?.endsWith('.mov') ||
+         name?.endsWith('.avi');
+};
+
+const isImageFile = (asset) => {
+  const ext = asset.ext?.toLowerCase().replace(/^\./, '');
+  const fileType = asset.file_type?.toLowerCase();
+  const name = asset.name?.toLowerCase();
+  
+  return fileType === 'image' ||
+         fileType === 'image/png' ||
+         fileType === 'image/jpeg' ||
+         fileType === 'image/webp' ||
+         ['jpg', 'jpeg', 'png', 'webp', 'gif', 'bmp', 'tiff', 'svg', 'ico'].includes(ext) ||
+         name?.endsWith('.jpg') ||
+         name?.endsWith('.jpeg') ||
+         name?.endsWith('.png') ||
+         name?.endsWith('.webp') ||
+         name?.endsWith('.gif');
+};
+
 const isZipFile = (asset) => {
   const ext = asset.ext?.toLowerCase().replace(/^\./, '');
   const fileType = asset.file_type?.toLowerCase();
@@ -115,8 +147,20 @@ const isMaterialFile = (asset) => {
          name?.includes('mtl');
 };
 
+const getMediaContent = (asset) => {
+  if (isVideoFile(asset)) {
+    return { type: 'video', url: asset.video_url || asset.file_url || asset.capture_url };
+  }
+  if (isImageFile(asset)) {
+    return { type: 'image', url: asset.image_url || asset.file_url || asset.capture_url };
+  }
+  return { type: 'none', url: null };
+};
+
 const getFileCategory = (asset) => {
   if (isZipFile(asset)) return 'archive';
+  if (isVideoFile(asset)) return 'video';
+  if (isImageFile(asset)) return 'image';
   if (is3DModel(asset)) return '3d_model';
   if (isTextureFile(asset)) return 'texture';
   if (isMaterialFile(asset)) return 'material';
@@ -127,6 +171,8 @@ const getFileIcon = (asset) => {
   const category = getFileCategory(asset);
   switch (category) {
     case 'archive': return '📦';
+    case 'video': return '🎬';
+    case 'image': return '🖼️';
     case '3d_model': return '🎮';
     case 'texture': return '🖼️';
     case 'material': return '📄';
@@ -138,6 +184,8 @@ const getFileColor = (asset) => {
   const category = getFileCategory(asset);
   switch (category) {
     case 'archive': return '#f59e0b';
+    case 'video': return '#8B5CF6';
+    case 'image': return '#3B82F6';
     case '3d_model': return '#10b981';
     case 'texture': return '#3B82F6';
     case 'material': return '#8B5CF6';
@@ -145,12 +193,244 @@ const getFileColor = (asset) => {
   }
 };
 
+// ============ MEDIA VIEWER POPUP ============
+function MediaViewerPopup({ asset, mediaUrl, mediaType, onClose }) {
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  const videoRef = useRef(null);
+
+  const toggleFullscreen = () => {
+    const element = videoRef.current || document.querySelector('.media-viewer-content');
+    if (!element) return;
+
+    if (!document.fullscreenElement) {
+      element.requestFullscreen?.() || element.webkitRequestFullscreen?.() || element.msRequestFullscreen?.();
+      setIsFullscreen(true);
+    } else {
+      document.exitFullscreen?.() || document.webkitExitFullscreen?.() || document.msExitFullscreen?.();
+      setIsFullscreen(false);
+    }
+  };
+
+  useEffect(() => {
+    const handleFullscreenChange = () => {
+      setIsFullscreen(!!document.fullscreenElement);
+    };
+    document.addEventListener('fullscreenchange', handleFullscreenChange);
+    document.addEventListener('webkitfullscreenchange', handleFullscreenChange);
+    document.addEventListener('msfullscreenchange', handleFullscreenChange);
+    return () => {
+      document.removeEventListener('fullscreenchange', handleFullscreenChange);
+      document.removeEventListener('webkitfullscreenchange', handleFullscreenChange);
+      document.removeEventListener('msfullscreenchange', handleFullscreenChange);
+    };
+  }, []);
+
+  useEffect(() => {
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.body.style.overflow = 'unset';
+    };
+  }, []);
+
+  return (
+    <div
+      className="media-viewer-overlay"
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
+      style={{
+        position: 'fixed',
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 0,
+        background: 'rgba(0,0,0,0.92)',
+        backdropFilter: 'blur(12px)',
+        zIndex: 9999,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        padding: '20px'
+      }}
+    >
+      <div
+        className="media-viewer-content"
+        style={{
+          position: 'relative',
+          maxWidth: '90vw',
+          maxHeight: '90vh',
+          width: '100%',
+          height: '100%',
+          display: 'flex',
+          flexDirection: 'column',
+          background: 'rgba(0,0,0,0.5)',
+          borderRadius: '16px',
+          overflow: 'hidden'
+        }}
+      >
+        <div style={{
+          padding: '16px 20px',
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          background: 'rgba(0,0,0,0.6)',
+          borderBottom: '1px solid rgba(255,255,255,0.1)',
+          flexShrink: 0
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12, minWidth: 0 }}>
+            <span style={{ fontSize: 20 }}>
+              {mediaType === 'video' ? '🎬' : '🖼️'}
+            </span>
+            <div style={{ overflow: 'hidden' }}>
+              <div style={{
+                fontSize: 14,
+                color: '#fff',
+                fontWeight: 500,
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                whiteSpace: 'nowrap'
+              }}>
+                {asset.title || asset.name}
+              </div>
+              <div style={{
+                fontSize: 11,
+                color: 'rgba(255,255,255,0.5)',
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                whiteSpace: 'nowrap'
+              }}>
+                {formatFileSize(asset.file_size || asset.size)} • {mediaType === 'video' ? 'Vidéo' : 'Image'}
+              </div>
+            </div>
+          </div>
+          <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
+            <button
+              onClick={toggleFullscreen}
+              style={{
+                background: 'rgba(255,255,255,0.1)',
+                border: 'none',
+                color: '#fff',
+                width: 36,
+                height: 36,
+                borderRadius: 8,
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                fontSize: 18,
+                transition: 'background 0.2s'
+              }}
+              onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(255,255,255,0.2)'}
+              onMouseLeave={(e) => e.currentTarget.style.background = 'rgba(255,255,255,0.1)'}
+              title={isFullscreen ? 'Quitter le plein écran' : 'Plein écran'}
+            >
+              {isFullscreen ? <LiaCompressSolid /> : <LiaExpandSolid />}
+            </button>
+            <button
+              onClick={onClose}
+              style={{
+                background: 'rgba(255,255,255,0.1)',
+                border: 'none',
+                color: '#fff',
+                width: 36,
+                height: 36,
+                borderRadius: 8,
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                fontSize: 24,
+                transition: 'background 0.2s'
+              }}
+              onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(255,0,0,0.3)'}
+              onMouseLeave={(e) => e.currentTarget.style.background = 'rgba(255,255,255,0.1)'}
+              title="Fermer"
+            >
+              ×
+            </button>
+          </div>
+        </div>
+
+        <div style={{
+          flex: 1,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          padding: '20px',
+          minHeight: 0,
+          position: 'relative'
+        }}>
+          {mediaType === 'video' ? (
+            <video
+              ref={videoRef}
+              src={mediaUrl}
+              controls
+              autoPlay
+              playsInline
+              style={{
+                maxWidth: '100%',
+                maxHeight: '100%',
+                borderRadius: '8px',
+                background: '#000'
+              }}
+              onError={(e) => {
+                console.error('Erreur lecture vidéo:', e);
+              }}
+            >
+              Votre navigateur ne supporte pas la lecture de vidéos.
+            </video>
+          ) : (
+            <img
+              src={mediaUrl}
+              alt={asset.title || asset.name}
+              style={{
+                maxWidth: '100%',
+                maxHeight: '100%',
+                objectFit: 'contain',
+                borderRadius: '8px',
+                background: '#000'
+              }}
+              onError={(e) => {
+                e.target.style.display = 'none';
+                e.target.parentElement.innerHTML = `
+                  <div style="text-align:center;color:#666;">
+                    <div style="font-size:48px;margin-bottom:12px;">🖼️</div>
+                    <div>Impossible de charger l'image</div>
+                  </div>
+                `;
+              }}
+            />
+          )}
+        </div>
+
+        <div style={{
+          padding: '12px 20px',
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          background: 'rgba(0,0,0,0.6)',
+          borderTop: '1px solid rgba(255,255,255,0.1)',
+          flexShrink: 0,
+          fontSize: 12,
+          color: 'rgba(255,255,255,0.4)'
+        }}>
+          <div>
+            {mediaType === 'video' ? '▶️ Lecture en cours' : '👁️ Visualisation'}
+          </div>
+          <div style={{ display: 'flex', gap: 16 }}>
+            <span>⌘ + F: Plein écran</span>
+            <span>ESC: Fermer</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ============ PAGINATION COMPOSANT ============
 function Pagination({ currentPage, totalPages, onPageChange, totalItems, itemsPerPage = 15, onLimitChange, isLoading = false }) {
-  // Calcul du nombre total de pages effectif
   const effectiveTotalPages = totalPages > 0 ? totalPages : Math.ceil(totalItems / itemsPerPage);
   
-  // Ne pas afficher la pagination si pas assez d'éléments
   if (totalItems === 0 || (effectiveTotalPages === 1 && totalItems <= itemsPerPage)) {
     return null;
   }
@@ -239,18 +519,6 @@ function Pagination({ currentPage, totalPages, onPageChange, totalItems, itemsPe
             justifyContent: 'center',
             transition: 'all 0.2s'
           }}
-          onMouseEnter={(e) => {
-            if (currentPage !== 1 && !isLoading) {
-              e.currentTarget.style.background = 'rgba(59,130,246,0.15)';
-              e.currentTarget.style.borderColor = 'rgba(59,130,246,0.3)';
-            }
-          }}
-          onMouseLeave={(e) => {
-            if (currentPage !== 1 && !isLoading) {
-              e.currentTarget.style.background = 'rgba(255,255,255,0.05)';
-              e.currentTarget.style.borderColor = 'rgba(255,255,255,0.06)';
-            }
-          }}
         >
           <MdChevronLeft size={18} />
         </button>
@@ -285,18 +553,6 @@ function Pagination({ currentPage, totalPages, onPageChange, totalItems, itemsPe
                 fontWeight: page === currentPage ? 600 : 400,
                 transition: 'all 0.2s'
               }}
-              onMouseEnter={(e) => {
-                if (page !== currentPage && !isLoading) {
-                  e.currentTarget.style.background = 'rgba(255,255,255,0.05)';
-                  e.currentTarget.style.borderColor = 'rgba(255,255,255,0.15)';
-                }
-              }}
-              onMouseLeave={(e) => {
-                if (page !== currentPage && !isLoading) {
-                  e.currentTarget.style.background = 'transparent';
-                  e.currentTarget.style.borderColor = 'rgba(255,255,255,0.06)';
-                }
-              }}
             >
               {page}
             </button>
@@ -318,18 +574,6 @@ function Pagination({ currentPage, totalPages, onPageChange, totalItems, itemsPe
             alignItems: 'center',
             justifyContent: 'center',
             transition: 'all 0.2s'
-          }}
-          onMouseEnter={(e) => {
-            if (currentPage !== effectiveTotalPages && effectiveTotalPages !== 0 && !isLoading) {
-              e.currentTarget.style.background = 'rgba(59,130,246,0.15)';
-              e.currentTarget.style.borderColor = 'rgba(59,130,246,0.3)';
-            }
-          }}
-          onMouseLeave={(e) => {
-            if (currentPage !== effectiveTotalPages && effectiveTotalPages !== 0 && !isLoading) {
-              e.currentTarget.style.background = 'rgba(255,255,255,0.05)';
-              e.currentTarget.style.borderColor = 'rgba(255,255,255,0.06)';
-            }
           }}
         >
           <MdChevronRight size={18} />
@@ -635,6 +879,13 @@ const AssetsPanel = ({ searchQuery = '' }) => {
   const [currentAssetId, setCurrentAssetId] = useState(null);
   const [currentAssetName, setCurrentAssetName] = useState('');
 
+  // États pour le Media Viewer
+  const [showMediaViewer, setShowMediaViewer] = useState(false);
+  const [selectedMedia, setSelectedMedia] = useState(null);
+
+  // Références pour les vidéos
+  const videoRefs = useRef({});
+
   const isMounted = useRef(true);
 
   // États pour les filtres avancés
@@ -651,7 +902,6 @@ const AssetsPanel = ({ searchQuery = '' }) => {
 
   // ============ FONCTIONS POUR LA GESTION DES ZIP ============
 
-  // Fonction de téléchargement avec timeout
   const fetchWithTimeout = async (url, options, timeout = 30000) => {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), timeout);
@@ -672,7 +922,6 @@ const AssetsPanel = ({ searchQuery = '' }) => {
     }
   };
 
-  // Extraction du contenu ZIP
   const extractZipContent = async (blob) => {
     if (!blob || blob.size === 0) {
       throw new Error('Le fichier ZIP est vide');
@@ -712,7 +961,6 @@ const AssetsPanel = ({ searchQuery = '' }) => {
     }
   };
 
-  // Fonction pour analyser le contenu du ZIP
   const analyzeZipContent = async (assetId, token) => {
     try {
       const response = await fetchWithTimeout(
@@ -757,7 +1005,6 @@ const AssetsPanel = ({ searchQuery = '' }) => {
     }
   };
 
-  // Fonction pour ouvrir la popup ZIP
   const openZipPopup = async (asset) => {
     const token = localStorage.getItem('token');
     if (!token) { 
@@ -824,7 +1071,6 @@ const AssetsPanel = ({ searchQuery = '' }) => {
     };
   }, [assets]);
   
-  // Synchroniser avec la recherche de la topbar
   useEffect(() => {
     if (searchQuery !== filters.search) {
       setFilters(prev => ({ ...prev, search: searchQuery }));
@@ -832,7 +1078,7 @@ const AssetsPanel = ({ searchQuery = '' }) => {
     }
   }, [searchQuery]);
 
-  // ============ FONCTION FETCH ASSETS CORRIGÉE ============
+  // ============ FONCTION FETCH ASSETS ============
   const fetchAssets = useCallback(async (pageNum = page) => {
     try {
       setLoading(true);
@@ -871,11 +1117,10 @@ const AssetsPanel = ({ searchQuery = '' }) => {
         url = `/assets?${buildQueryParams()}`;
       }
 
-      console.log('🔍 Fetching assets from:', url); // Debug
+      console.log('🔍 Fetching assets from:', url);
       const data = await apiRequest(url);
-      console.log('📦 Données reçues:', data); // Debug
+      console.log('📦 Données reçues:', data);
 
-      // Gestion des différentes structures de réponse possibles
       const assetsList = data.assets || data.data || [];
       const pagination = data.pagination || {};
       
@@ -891,14 +1136,12 @@ const AssetsPanel = ({ searchQuery = '' }) => {
     } finally {
       setLoading(false);
     }
-  }, [filters, limit]); // ⚠️ page N'EST PAS dans les dépendances
+  }, [filters, limit]);
 
-  // ============ USEFFECT CORRIGÉ ============
   useEffect(() => {
     fetchAssets(page);
-  }, [page]); // ⚠️ fetchAssets N'EST PAS dans les dépendances
+  }, [page]);
 
-  // Récupérer les projets
   const fetchProjects = useCallback(async () => {
     try {
       const response = await fetch(`${API_BASE_URL}/projects/simple`, {
@@ -914,7 +1157,6 @@ const AssetsPanel = ({ searchQuery = '' }) => {
     }
   }, []);
 
-  // Récupérer les catégories
   const fetchCategories = useCallback(async () => {
     try {
       const response = await fetch(`${API_BASE_URL}/categories`, {
@@ -930,7 +1172,6 @@ const AssetsPanel = ({ searchQuery = '' }) => {
     }
   }, []);
 
-  // Récupérer les utilisateurs
   const fetchUsers = useCallback(async () => {
     try {
       let usersData = [];
@@ -970,7 +1211,22 @@ const AssetsPanel = ({ searchQuery = '' }) => {
     }
   }, []);
 
-  // === FONCTION POUR OUVRIR LE MODEL VIEWER 3D ===
+  // ============ GESTION DU SURVOL DES VIDÉOS ============
+  const handleVideoHover = (assetId, isHovering) => {
+    const videoElement = videoRefs.current[assetId];
+    if (videoElement) {
+      if (isHovering) {
+        videoElement.play().catch(err => {
+          console.warn('La lecture automatique a été bloquée:', err);
+        });
+      } else {
+        videoElement.pause();
+        videoElement.currentTime = 0;
+      }
+    }
+  };
+
+  // ============ OUVERTURE DU MODEL VIEWER 3D ============
   const openModelViewer = (asset) => {
     const token = localStorage.getItem('token');
     if (!token) { 
@@ -1005,7 +1261,7 @@ const AssetsPanel = ({ searchQuery = '' }) => {
     setShowModelViewer(true);
   };
 
-  // Supprimer un asset
+  // ============ SUPPRESSION ============
   const handleDelete = async () => {
     if (!assetToDelete) return;
 
@@ -1015,7 +1271,6 @@ const AssetsPanel = ({ searchQuery = '' }) => {
 
       setShowConfirmModal(false);
       setAssetToDelete(null);
-      // Recharger la page actuelle après suppression
       await fetchAssets(page);
     } catch (err) {
       console.error('Erreur suppression:', err);
@@ -1025,97 +1280,99 @@ const AssetsPanel = ({ searchQuery = '' }) => {
     }
   };
 
-  // Télécharger un asset
-// Télécharger un asset
-const handleDownload = async (asset) => {
-  try {
-    setDownloadingId(asset.id);
-    const token = localStorage.getItem('token');
+  // ============ TÉLÉCHARGEMENT ============
+  const handleDownload = async (asset) => {
+    try {
+      setDownloadingId(asset.id);
+      const token = localStorage.getItem('token');
 
-    // Construire le nom du fichier correctement
-    let fileName = asset.title || asset.name || asset.file_name || 'fichier';
-    
-    // Ajouter l'extension si elle existe
-    const ext = asset.ext || asset.file_ext || asset.extension;
-    if (ext) {
-      const cleanExt = ext.replace(/^\./, '').toLowerCase();
-      // Vérifier si le nom a déjà l'extension
-      if (!fileName.toLowerCase().endsWith(`.${cleanExt}`)) {
-        fileName = `${fileName}.${cleanExt}`;
+      let fileName = asset.title || asset.name || asset.file_name || 'fichier';
+      
+      const ext = asset.ext || asset.file_ext || asset.extension;
+      if (ext) {
+        const cleanExt = ext.replace(/^\./, '').toLowerCase();
+        if (!fileName.toLowerCase().endsWith(`.${cleanExt}`)) {
+          fileName = `${fileName}.${cleanExt}`;
+        }
       }
-    }
 
-    console.log('Téléchargement:', fileName); // Pour déboguer
+      const response = await fetch(`${API_BASE_URL}/assets/${asset.id}/download`, {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Accept': '*/*'
+        }
+      });
 
-    const response = await fetch(`${API_BASE_URL}/assets/${asset.id}/download`, {
-      headers: {
-        'Authorization': `Bearer ${token}`,
-        'Accept': '*/*' // Important pour les fichiers binaires
+      if (!response.ok) {
+        let errorMsg = 'Erreur téléchargement';
+        try {
+          const errorData = await response.json();
+          errorMsg = errorData.error || errorMsg;
+        } catch (e) {
+          errorMsg = `Erreur ${response.status}: ${response.statusText}`;
+        }
+        
+        if (response.status === 404) {
+          throw new Error('Fichier non trouvé sur le serveur');
+        }
+        if (response.status === 403) {
+          throw new Error('Vous n\'avez pas la permission de télécharger ce fichier');
+        }
+        if (response.status === 401) {
+          throw new Error('Session expirée, veuillez vous reconnecter');
+        }
+        throw new Error(errorMsg);
       }
-    });
 
-    if (!response.ok) {
-      let errorMsg = 'Erreur téléchargement';
-      try {
-        const errorData = await response.json();
-        errorMsg = errorData.error || errorMsg;
-      } catch (e) {
-        errorMsg = `Erreur ${response.status}: ${response.statusText}`;
+      const contentDisposition = response.headers.get('content-disposition');
+      if (contentDisposition) {
+        const match = contentDisposition.match(/filename[^;=\n]*=((['"]).*?\2|[^;\n]*)/);
+        if (match && match[1]) {
+          fileName = match[1].replace(/['"]/g, '');
+        }
+      }
+
+      const blob = await response.blob();
+      
+      if (blob.size === 0) {
+        throw new Error('Le fichier téléchargé est vide');
       }
       
-      if (response.status === 404) {
-        throw new Error('Fichier non trouvé sur le serveur');
-      }
-      if (response.status === 403) {
-        throw new Error('Vous n\'avez pas la permission de télécharger ce fichier');
-      }
-      if (response.status === 401) {
-        throw new Error('Session expirée, veuillez vous reconnecter');
-      }
-      throw new Error(errorMsg);
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = fileName;
+      document.body.appendChild(a);
+      a.click();
+      
+      setTimeout(() => {
+        window.URL.revokeObjectURL(url);
+        document.body.removeChild(a);
+      }, 100);
+
+    } catch (err) {
+      console.error('Erreur téléchargement:', err);
+      alert('Erreur lors du téléchargement: ' + err.message);
+    } finally {
+      setDownloadingId(null);
     }
+  };
 
-    // Récupérer le nom du fichier depuis les headers si disponible
-    const contentDisposition = response.headers.get('content-disposition');
-    if (contentDisposition) {
-      const match = contentDisposition.match(/filename[^;=\n]*=((['"]).*?\2|[^;\n]*)/);
-      if (match && match[1]) {
-        fileName = match[1].replace(/['"]/g, '');
-      }
-    }
-
-    const blob = await response.blob();
-    
-    // Vérifier que le blob n'est pas vide
-    if (blob.size === 0) {
-      throw new Error('Le fichier téléchargé est vide');
-    }
-    
-    const url = window.URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = fileName;
-    document.body.appendChild(a);
-    a.click();
-    
-    // Nettoyer après un délai
-    setTimeout(() => {
-      window.URL.revokeObjectURL(url);
-      document.body.removeChild(a);
-    }, 100);
-
-  } catch (err) {
-    console.error('Erreur téléchargement détaillée:', err);
-    alert('Erreur lors du téléchargement: ' + err.message);
-  } finally {
-    setDownloadingId(null);
-  }
-};
-
-  // === FONCTION DE VISUALISATION ===
+  // ============ VISUALISATION ============
   const handleView = (asset) => {
     if (isZipFile(asset)) {
       openZipPopup(asset);
+      return;
+    }
+
+    // Si c'est une vidéo ou une image, ouvrir le popup Media Viewer
+    const mediaContent = getMediaContent(asset);
+    if (mediaContent.type !== 'none' && mediaContent.url) {
+      const fullUrl = mediaContent.url.startsWith('http') 
+        ? mediaContent.url 
+        : `${API_BASE_URL.replace('/api', '')}${mediaContent.url}`;
+      setSelectedMedia({ asset, mediaUrl: fullUrl, mediaType: mediaContent.type });
+      setShowMediaViewer(true);
       return;
     }
 
@@ -1127,7 +1384,6 @@ const handleDownload = async (asset) => {
     }
   };
 
-  // Fonction de téléchargement pour le modal
   const handleDownloadFromModal = (assetId) => {
     const asset = assets.find(a => a.id === assetId);
     if (asset) {
@@ -1135,22 +1391,21 @@ const handleDownload = async (asset) => {
     }
   };
 
-  // ============ GESTIONNAIRES DE PAGINATION CORRIGÉS ============
+  // ============ GESTIONNAIRES DE PAGINATION ============
   const handlePageChange = (newPage) => {
     console.log('📄 Changement de page vers:', newPage);
     if (newPage >= 1 && newPage <= totalPages) {
       setPage(newPage);
-      // Le useEffect avec [page] va déclencher le rechargement
     }
   };
 
   const handleLimitChange = (newLimit) => {
     console.log('📏 Changement de limite vers:', newLimit);
     setLimit(newLimit);
-    setPage(1); // Reset à la page 1
+    setPage(1);
   };
 
-  // Gestion des filtres
+  // ============ FILTRES ============
   const handleFilterChange = (key, value) => {
     setFilters(prev => ({ ...prev, [key]: value }));
     setPage(1);
@@ -1170,10 +1425,9 @@ const handleDownload = async (asset) => {
     setPage(1);
   };
 
-  // Compter le nombre de filtres actifs
   const activeFiltersCount = Object.values(filters).filter(v => v !== '').length;
 
-  // Chargement initial
+  // ============ CHARGEMENT INITIAL ============
   useEffect(() => {
     fetchProjects();
     fetchCategories();
@@ -1196,6 +1450,19 @@ const handleDownload = async (asset) => {
 
   return (
     <>
+      {/* Media Viewer Popup */}
+      {showMediaViewer && selectedMedia && (
+        <MediaViewerPopup
+          asset={selectedMedia.asset}
+          mediaUrl={selectedMedia.mediaUrl}
+          mediaType={selectedMedia.mediaType}
+          onClose={() => {
+            setShowMediaViewer(false);
+            setSelectedMedia(null);
+          }}
+        />
+      )}
+
       <div className="tbl-wrap" style={{ background: 'rgba(12,22,40,.8)', border: '1px solid rgba(255,255,255,.06)', borderRadius: 12, overflow: 'hidden' }}>
         <div className="tbl-top" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 18px', flexWrap: 'wrap', gap: 12 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
@@ -1417,12 +1684,19 @@ const handleDownload = async (asset) => {
           {assets.map((asset) => {
             const is3D = is3DModel(asset);
             const isZIP = isZipFile(asset);
+            const isVideo = isVideoFile(asset);
+            const isImage = isImageFile(asset);
             const isTexture = isTextureFile(asset);
             const isMaterial = isMaterialFile(asset);
             const isHovered = hoveredAssetId === asset.id;
             const isDeleting = deletingId === asset.id;
             const isDownloading = downloadingId === asset.id;
             const fileCategory = getFileCategory(asset);
+
+            // Récupération de l'URL du média
+            const mediaContent = getMediaContent(asset);
+            const mediaUrl = mediaContent.url ? `${API_BASE_URL.replace('/api', '')}${mediaContent.url}` : null;
+            const isMedia = mediaContent.type !== 'none' && mediaUrl;
 
             return (
               <div
@@ -1435,10 +1709,20 @@ const handleDownload = async (asset) => {
                   transition: 'transform 0.2s, border-color 0.2s',
                   transform: isHovered ? 'translateY(-4px)' : 'none'
                 }}
-                onMouseEnter={() => setHoveredAssetId(asset.id)}
-                onMouseLeave={() => setHoveredAssetId(null)}
+                onMouseEnter={() => {
+                  setHoveredAssetId(asset.id);
+                  if (isVideo) {
+                    handleVideoHover(asset.id, true);
+                  }
+                }}
+                onMouseLeave={() => {
+                  setHoveredAssetId(null);
+                  if (isVideo) {
+                    handleVideoHover(asset.id, false);
+                  }
+                }}
               >
-                {/* Zone de preview cliquable */}
+                {/* Zone de preview */}
                 <div
                   onClick={() => handleView(asset)}
                   style={{
@@ -1452,7 +1736,144 @@ const handleDownload = async (asset) => {
                     overflow: 'hidden'
                   }}
                 >
-                  {isZIP ? (
+                  {/* VIDÉO - Lecture directe avec survol */}
+                  {isVideo && mediaUrl && (
+                    <>
+                      <video
+                        ref={el => { videoRefs.current[asset.id] = el; }}
+                        src={mediaUrl}
+                        muted
+                        loop
+                        playsInline
+                        preload="metadata"
+                        style={{
+                          width: '100%',
+                          height: '100%',
+                          objectFit: 'cover',
+                          objectPosition: 'center'
+                        }}
+                      />
+                      <div style={{
+                        position: 'absolute',
+                        top: 10,
+                        right: 10,
+                        background: 'rgba(0,0,0,.7)',
+                        backdropFilter: 'blur(4px)',
+                        padding: '4px 10px',
+                        borderRadius: 12,
+                        fontSize: 11,
+                        color: '#8B5CF6',
+                        border: '1px solid rgba(139,92,246,.3)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 4,
+                        zIndex: 2,
+                        pointerEvents: 'none'
+                      }}>
+                        🎬 VIDÉO
+                      </div>
+                      {isHovered && (
+                        <div style={{
+                          position: 'absolute',
+                          bottom: 16,
+                          left: '50%',
+                          transform: 'translateX(-50%)',
+                          background: 'rgba(0,0,0,.8)',
+                          padding: '6px 14px',
+                          borderRadius: 20,
+                          fontSize: 12,
+                          color: '#fff',
+                          whiteSpace: 'nowrap',
+                          zIndex: 2,
+                          pointerEvents: 'none'
+                        }}>
+                          ▶️ Lecture en cours
+                        </div>
+                      )}
+                      <div style={{
+                        position: 'absolute',
+                        bottom: 16,
+                        right: 16,
+                        background: 'rgba(0,0,0,.7)',
+                        padding: '4px 10px',
+                        borderRadius: 12,
+                        fontSize: 10,
+                        color: 'rgba(255,255,255,0.7)',
+                        zIndex: 2,
+                        pointerEvents: 'none',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 4
+                      }}>
+                        <LiaExpandSolid size={12} /> Agrandir
+                      </div>
+                    </>
+                  )}
+
+                  {/* IMAGE - Affichage direct */}
+                  {isImage && mediaUrl && (
+                    <>
+                      <img
+                        src={mediaUrl}
+                        alt={`Aperçu de ${asset.title || asset.name}`}
+                        style={{
+                          width: '100%',
+                          height: '100%',
+                          objectFit: 'cover',
+                          objectPosition: 'center'
+                        }}
+                        onError={(e) => {
+                          e.target.style.display = 'none';
+                          const parent = e.target.parentElement;
+                          const fallback = parent.querySelector('.image-fallback');
+                          if (fallback) fallback.style.display = 'flex';
+                        }}
+                      />
+                      <div className="image-fallback" style={{ display: 'none', textAlign: 'center' }}>
+                        <div style={{ fontSize: 64, marginBottom: 8 }}>🖼️</div>
+                        <div style={{ fontSize: 12, color: '#3B82F6' }}>Image</div>
+                      </div>
+                      <div style={{
+                        position: 'absolute',
+                        top: 10,
+                        right: 10,
+                        background: 'rgba(0,0,0,.7)',
+                        backdropFilter: 'blur(4px)',
+                        padding: '4px 10px',
+                        borderRadius: 12,
+                        fontSize: 11,
+                        color: '#3B82F6',
+                        border: '1px solid rgba(59,130,246,.3)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 4,
+                        zIndex: 2,
+                        pointerEvents: 'none'
+                      }}>
+                        🖼️ IMAGE
+                      </div>
+                      <div style={{
+                        position: 'absolute',
+                        bottom: 16,
+                        right: 16,
+                        background: 'rgba(0,0,0,.7)',
+                        padding: '4px 10px',
+                        borderRadius: 12,
+                        fontSize: 10,
+                        color: 'rgba(255,255,255,0.7)',
+                        zIndex: 2,
+                        pointerEvents: 'none',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 4
+                      }}>
+                        <LiaExpandSolid size={12} /> Agrandir
+                      </div>
+                    </>
+                  )}
+
+                  {/* ZIP */}
+                  {isZIP && !isVideo && !isImage && (
                     asset.capture_url ? (
                       <>
                         <img
@@ -1534,7 +1955,10 @@ const handleDownload = async (asset) => {
                         )}
                       </div>
                     )
-                  ) : is3D ? (
+                  )}
+
+                  {/* MODÈLES 3D */}
+                  {is3D && !isVideo && !isImage && !isZIP && (
                     asset.capture_url ? (
                       <>
                         <img
@@ -1602,7 +2026,10 @@ const handleDownload = async (asset) => {
                         )}
                       </div>
                     )
-                  ) : isTexture ? (
+                  )}
+
+                  {/* TEXTURES */}
+                  {isTexture && !isVideo && !isImage && !is3D && !isZIP && (
                     asset.capture_url ? (
                       <img
                         src={`${API_BASE_URL.replace('/api', '')}${asset.capture_url}`}
@@ -1620,12 +2047,18 @@ const handleDownload = async (asset) => {
                         <div style={{ fontSize: 12, color: '#3B82F6' }}>Texture</div>
                       </div>
                     )
-                  ) : isMaterial ? (
+                  )}
+
+                  {/* MATÉRIAUX */}
+                  {isMaterial && !isVideo && !isImage && !is3D && !isZIP && (
                     <div style={{ textAlign: 'center' }}>
                       <div style={{ fontSize: 64, marginBottom: 8 }}>📄</div>
                       <div style={{ fontSize: 12, color: '#8B5CF6' }}>Matériau</div>
                     </div>
-                  ) : (
+                  )}
+
+                  {/* AUTRES FICHIERS */}
+                  {!isVideo && !isImage && !is3D && !isZIP && !isTexture && !isMaterial && (
                     asset.capture_url ? (
                       <img
                         src={`${API_BASE_URL.replace('/api', '')}${asset.capture_url}`}
@@ -1664,10 +2097,11 @@ const handleDownload = async (asset) => {
                     </div>
                   )}
                   
-                  {/* Indicateur de type avec icône */}
                   <div style={{ fontSize: 10, marginBottom: 10, color: getFileColor(asset) }}>
                     {getFileIcon(asset)} {fileCategory === '3d_model' ? 'Modèle 3D' : 
                        fileCategory === 'archive' ? 'Archive 3D' :
+                       fileCategory === 'video' ? 'Vidéo' :
+                       fileCategory === 'image' ? 'Image' :
                        fileCategory === 'texture' ? 'Texture' :
                        fileCategory === 'material' ? 'Matériau' : 'Fichier'}
                     {fileCategory === '3d_model' && asset.ext && (
@@ -1677,7 +2111,6 @@ const handleDownload = async (asset) => {
                     )}
                   </div>
 
-                  {/* Tags d'information */}
                   <div style={{
                     display: 'flex',
                     gap: 4,
@@ -1729,6 +2162,28 @@ const handleDownload = async (asset) => {
                         📦 ZIP
                       </span>
                     )}
+                    {isVideo && (
+                      <span style={{
+                        fontSize: 9,
+                        background: 'rgba(139,92,246,.15)',
+                        color: '#8B5CF6',
+                        padding: '2px 8px',
+                        borderRadius: 10
+                      }}>
+                        🎬 Vidéo
+                      </span>
+                    )}
+                    {isImage && !isTexture && (
+                      <span style={{
+                        fontSize: 9,
+                        background: 'rgba(59,130,246,.15)',
+                        color: '#3B82F6',
+                        padding: '2px 8px',
+                        borderRadius: 10
+                      }}>
+                        🖼️ Image
+                      </span>
+                    )}
                     <span style={{
                       fontSize: 9,
                       background: asset.visibility === 'public' ? 'rgba(16,185,129,.15)' : asset.visibility === 'team' ? 'rgba(59,130,246,.15)' : 'rgba(239,68,68,.15)',
@@ -1753,33 +2208,33 @@ const handleDownload = async (asset) => {
                       onClick={() => handleView(asset)}
                       style={{
                         flex: 1,
-                        background: is3D || isZIP ? 'rgba(59,130,246,.15)' : 'rgba(255,255,255,.05)',
+                        background: is3D || isZIP || isVideo || isImage ? 'rgba(59,130,246,.15)' : 'rgba(255,255,255,.05)',
                         border: 'none',
                         padding: '7px',
                         borderRadius: 6,
-                        color: is3D || isZIP ? '#3B82F6' : '#666',
-                        cursor: is3D || isZIP ? 'pointer' : 'default',
+                        color: is3D || isZIP || isVideo || isImage ? '#3B82F6' : '#666',
+                        cursor: is3D || isZIP || isVideo || isImage ? 'pointer' : 'default',
                         fontSize: 12,
                         display: 'flex',
                         alignItems: 'center',
                         justifyContent: 'center',
                         gap: 6,
                         transition: 'background 0.2s',
-                        opacity: is3D || isZIP ? 1 : 0.5
+                        opacity: is3D || isZIP || isVideo || isImage ? 1 : 0.5
                       }}
                       onMouseEnter={(e) => {
-                        if (is3D || isZIP) {
+                        if (is3D || isZIP || isVideo || isImage) {
                           e.currentTarget.style.background = 'rgba(59,130,246,.25)';
                         }
                       }}
                       onMouseLeave={(e) => {
-                        if (is3D || isZIP) {
+                        if (is3D || isZIP || isVideo || isImage) {
                           e.currentTarget.style.background = 'rgba(59,130,246,.15)';
                         }
                       }}
                     >
                       <LiaEyeSolid size={14} />
-                      {isZIP ? '📂 Explorer' : is3D ? '3D Viewer' : 'Preview'}
+                      {isZIP ? '📂 Explorer' : isVideo ? '▶️ Lire' : isImage ? '👁️ Voir' : is3D ? '3D Viewer' : 'Preview'}
                     </button>
                     <button
                       onClick={() => handleDownload(asset)}
@@ -1879,7 +2334,7 @@ const handleDownload = async (asset) => {
           </div>
         )}
 
-        {/* ============ PAGINATION ============ */}
+        {/* Pagination */}
         {(totalPages > 1 || totalAssets > limit) && (
           <Pagination
             currentPage={page}
@@ -1914,7 +2369,7 @@ const handleDownload = async (asset) => {
         />
       )}
 
-      {/* ModelViewer 3D pour les modèles 3D */}
+      {/* ModelViewer 3D */}
       {showModelViewer && selectedModel && (
         <ModelViewer
           key={selectedModel.id + (selectedModel.selectedZipFile?.filename || '')}
@@ -2053,6 +2508,21 @@ const handleDownload = async (asset) => {
           border-top: 2px solid #3B82F6;
           border-radius: 50%;
           animation: spin 0.8s linear infinite;
+        }
+
+        .media-viewer-overlay {
+          position: fixed;
+          top: 0;
+          left: 0;
+          right: 0;
+          bottom: 0;
+          background: rgba(0,0,0,0.92);
+          backdrop-filter: blur(12px);
+          z-index: 9999;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          padding: 20px;
         }
       `}</style>
     </>
