@@ -11,6 +11,78 @@ import { FBXLoader } from 'three/examples/jsm/loaders/FBXLoader';
 import { MTLLoader } from 'three/examples/jsm/loaders/MTLLoader';
 import * as THREE from 'three';
 import JSZip from 'jszip';
+import { 
+  FaDownload, 
+  FaTimes, 
+  FaSpinner, 
+  FaExclamationTriangle,
+  FaFileArchive,
+  FaCube,
+  FaInfoCircle,
+  FaCalendarAlt,
+  FaLock,
+  FaGlobe,
+  FaFileAlt,
+  FaRuler,
+  FaBox,
+  FaLayerGroup,
+  FaImage
+} from 'react-icons/fa';
+import { 
+  MdClose, 
+  MdDownload, 
+  MdError, 
+  MdInfo, 
+  MdLock, 
+  MdPublic,
+  MdCalendarToday,
+  MdDescription,
+  MdFolderZip,
+  Md3DRotation,
+  MdZoomIn,
+  MdZoomOut,
+  MdCenterFocusStrong,
+  MdCrop,
+  MdVisibility,
+  MdFilePresent,
+  MdImage
+} from 'react-icons/md';
+import { 
+  HiDownload, 
+  HiX, 
+  HiExclamation,
+  HiInformationCircle,
+  HiLockClosed,
+  HiGlobe,
+  HiCalendar,
+  HiDocument,
+  HiCube,
+  HiFolderOpen
+} from 'react-icons/hi';
+import { 
+  LiaDownloadSolid, 
+  LiaTimesSolid, 
+  LiaExclamationTriangleSolid,
+  LiaInfoCircleSolid,
+  LiaLockSolid,
+  LiaGlobeSolid,
+  LiaCalendarAltSolid,
+  LiaFileSolid,
+  LiaCubeSolid
+} from 'react-icons/lia';
+import { 
+  BsDownload, 
+  BsX, 
+  BsExclamationTriangle,
+  BsInfoCircle,
+  BsLock,
+  BsGlobe,
+  BsCalendar,
+  BsFile,
+  BsBox,
+  BsLayers,
+  BsImage
+} from 'react-icons/bs';
 
 const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:5000';
 
@@ -294,7 +366,6 @@ function fitCameraToModel(camera, controls, model, padding = DEFAULT_CAMERA_PADD
 function sanitizeMaterial(material) {
   if (!material) return null;
   
-  // Si ce n'est pas un matériau valide, retourner null
   if (!material.isMaterial) {
     console.warn('Matériau invalide, création d\'un nouveau matériau par défaut');
     return new THREE.MeshStandardMaterial({
@@ -305,27 +376,22 @@ function sanitizeMaterial(material) {
   }
 
   try {
-    // Vérifier et réparer les textures
     const textureProps = ['map', 'normalMap', 'roughnessMap', 'metalnessMap', 'emissiveMap', 'alphaMap', 'bumpMap', 'displacementMap', 'specularMap'];
     
     for (const prop of textureProps) {
       if (material[prop]) {
-        // Vérifier si la texture est valide
         if (!material[prop].isTexture) {
           console.warn(`Texture ${prop} invalide, suppression`);
           material[prop] = null;
           continue;
         }
         
-        // Vérifier si l'image de la texture est chargée
         if (material[prop].image && !material[prop].image.width) {
           console.warn(`Texture ${prop} pas encore chargée, tentative de chargement...`);
-          // Laisser la texture, elle pourrait se charger plus tard
         }
       }
     }
 
-    // S'assurer que les propriétés de couleur sont valides
     if (material.color && !material.color.isColor) {
       material.color = new THREE.Color(material.color);
     }
@@ -334,7 +400,6 @@ function sanitizeMaterial(material) {
       material.emissive = new THREE.Color(material.emissive);
     }
 
-    // Définir des valeurs par défaut pour les propriétés manquantes
     if (material.opacity === undefined) material.opacity = 1;
     if (material.transparent === undefined) material.transparent = false;
     if (material.side === undefined) material.side = THREE.FrontSide;
@@ -528,7 +593,6 @@ async function applyZipTexturesToThree(model, virtualFS) {
       try {
         targetMaterial = new THREE.MeshStandardMaterial();
         
-        // Copier les propriétés de base
         if (material.color) targetMaterial.color.copy(material.color);
         if (material.emissive) targetMaterial.emissive.copy(material.emissive);
         targetMaterial.emissiveIntensity = material.emissiveIntensity || 0;
@@ -537,7 +601,6 @@ async function applyZipTexturesToThree(model, virtualFS) {
         targetMaterial.side = material.side || THREE.FrontSide;
         targetMaterial.name = material.name || '';
 
-        // Convertir specular en roughness/metalness
         if (material.specular && material.specular.isColor) {
           const specularIntensity = material.specular.r;
           targetMaterial.metalness = 0.0;
@@ -547,7 +610,6 @@ async function applyZipTexturesToThree(model, virtualFS) {
           targetMaterial.roughness = Math.max(0.1, 1 - Math.min(material.shininess / 100, 0.9));
         }
 
-        // Copier les textures existantes
         if (material.map && material.map.isTexture) targetMaterial.map = material.map;
         if (material.specularMap && material.specularMap.isTexture) targetMaterial.roughnessMap = material.specularMap;
         if (material.bumpMap && material.bumpMap.isTexture) {
@@ -557,7 +619,6 @@ async function applyZipTexturesToThree(model, virtualFS) {
           }
         }
 
-        // Nettoyer le nouveau matériau
         targetMaterial = sanitizeMaterial(targetMaterial) || targetMaterial;
         
         console.log(`  ✅ Matériau converti en MeshStandardMaterial`);
@@ -589,7 +650,6 @@ async function applyZipTexturesToThree(model, virtualFS) {
     const pendingMaps = {};
 
     for (const [prop, match] of Object.entries(assignment)) {
-      // Vérifier si la propriété est déjà définie et valide
       if (targetMaterial[prop] && targetMaterial[prop].isTexture) {
         console.log(`    ⏭️ ${prop} déjà défini, ignoré`);
         continue;
@@ -610,7 +670,6 @@ async function applyZipTexturesToThree(model, virtualFS) {
       console.log(`  ⚠️ Aucune texture trouvée pour ce matériau`);
     }
 
-    // Appliquer les textures
     try {
       for (const [prop, texture] of Object.entries(pendingMaps)) {
         if (texture && texture.isTexture) {
@@ -622,7 +681,6 @@ async function applyZipTexturesToThree(model, virtualFS) {
       console.warn('Erreur lors de l\'application des textures:', error);
     }
 
-    // Assigner le matériau aux meshes
     try {
       if (meshes.length === 1) {
         meshes[0].material = targetMaterial;
@@ -761,7 +819,6 @@ async function loadModelFromZip(zipFile, virtualFS, selectedFile) {
 
     URL.revokeObjectURL(fileUrl);
 
-    // Nettoyer les matériaux du modèle
     if (model) {
       model.traverse((child) => {
         if (child.isMesh && child.material) {
@@ -776,7 +833,6 @@ async function loadModelFromZip(zipFile, virtualFS, selectedFile) {
       });
     }
 
-    // Normalisation de la taille du modèle
     const normalizationResult = normalizeModelSize(model, TARGET_MODEL_SIZE);
     console.log('📏 Résultat de la normalisation:', normalizationResult);
 
@@ -904,10 +960,13 @@ function AnimationController({ model, onAnimationChange }) {
               borderRadius: 4,
               color: '#fff',
               cursor: 'pointer',
-              fontSize: 11
+              fontSize: 11,
+              display: 'flex',
+              alignItems: 'center',
+              gap: 4
             }}
           >
-            ⏹ Stop
+            <MdCenterFocusStrong size={14} /> Stop
           </button>
         )}
       </div>
@@ -931,7 +990,7 @@ function WebGLErrorFallback({ error, onRetry }) {
       padding: '40px',
       textAlign: 'center'
     }}>
-      <div style={{ fontSize: 48, marginBottom: 16 }}>⚠️</div>
+      <FaExclamationTriangle size={48} style={{ color: '#f59e0b', marginBottom: 16 }} />
       <h3 style={{ margin: '0 0 8px' }}>Erreur de rendu 3D</h3>
       <p style={{ color: '#666', maxWidth: 400, margin: '0 0 20px' }}>
         {error || 'Impossible d\'initialiser le contexte WebGL. Vérifiez que votre navigateur supporte WebGL.'}
@@ -946,10 +1005,13 @@ function WebGLErrorFallback({ error, onRetry }) {
           color: '#fff',
           cursor: 'pointer',
           fontSize: 14,
-          fontWeight: 500
+          fontWeight: 500,
+          display: 'flex',
+          alignItems: 'center',
+          gap: 8
         }}
       >
-        🔄 Réessayer
+        <FaSpinner /> Réessayer
       </button>
     </div>
   );
@@ -1339,7 +1401,6 @@ const ThreeModelLoader = forwardRef(function ThreeModelLoader(
               throw new Error(`Format non supporté: ${ext}`);
           }
 
-          // Nettoyer les matériaux du modèle
           if (modelData) {
             modelData.traverse((child) => {
               if (child.isMesh && child.material) {
@@ -1478,7 +1539,9 @@ const ThreeModelLoader = forwardRef(function ThreeModelLoader(
             animation: 'spin 1s linear infinite',
             margin: '0 auto 12px'
           }} />
-          <div style={{ color: '#666' }}>Chargement... {Math.round(loadingProgress)}%</div>
+          <div style={{ color: '#666' }}>
+            <FaSpinner style={{ marginRight: 8 }} /> Chargement... {Math.round(loadingProgress)}%
+          </div>
         </div>
       )}
 
@@ -1497,16 +1560,17 @@ const ThreeModelLoader = forwardRef(function ThreeModelLoader(
           border: '1px solid rgba(255,255,255,0.1)',
           zIndex: 5
         }}>
-          <div>Sommets: {stats.vertices?.toLocaleString() || 0}</div>
-          <div>Triangles: {stats.triangles?.toLocaleString() || 0}</div>
-          <div>Matériaux: {stats.materials || 0}</div>
-          <div>Textures: {stats.textures || 0}</div>
+          <div><BsBox size={10} style={{ marginRight: 4 }} /> Sommets: {stats.vertices?.toLocaleString() || 0}</div>
+          <div><BsLayers size={10} style={{ marginRight: 4 }} /> Triangles: {stats.triangles?.toLocaleString() || 0}</div>
+          <div><FaLayerGroup size={10} style={{ marginRight: 4 }} /> Matériaux: {stats.materials || 0}</div>
+          <div><MdImage size={10} style={{ marginRight: 4 }} /> Textures: {stats.textures || 0}</div>
           <div style={{ color: '#3B82F6', fontSize: 10 }}>
+            <FaRuler size={10} style={{ marginRight: 4 }} /> 
             {stats.dimensions?.width?.toFixed(2) || 0} × {stats.dimensions?.height?.toFixed(2) || 0} × {stats.dimensions?.depth?.toFixed(2) || 0}
           </div>
           {normalizationInfo && normalizationInfo.scale !== 1 && (
             <div style={{ color: '#F59E0B', fontSize: 9, marginTop: 2 }}>
-              Redimensionné: ×{normalizationInfo.scale.toFixed(2)}
+              <FaRuler size={10} style={{ marginRight: 4 }} /> Redimensionné: ×{normalizationInfo.scale.toFixed(2)}
             </div>
           )}
         </div>
@@ -1561,7 +1625,9 @@ function CameraControlsPanel({ viewerRef, visible }) {
 
       <div style={{ display: 'flex', gap: 6, marginTop: 4 }}>
         <button onClick={() => call('zoomOut')} style={{ ...buttonStyleLight, flex: 1 }}>−</button>
-        <button onClick={() => call('resetView')} style={{ ...buttonStyleLight, background: 'rgba(59,130,246,0.15)', flex: 1 }}>⌂</button>
+        <button onClick={() => call('resetView')} style={{ ...buttonStyleLight, background: 'rgba(59,130,246,0.15)', flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <MdCenterFocusStrong size={16} />
+        </button>
         <button onClick={() => call('zoomIn')} style={{ ...buttonStyleLight, flex: 1 }}>+</button>
       </div>
     </div>
@@ -1604,6 +1670,8 @@ export default function ModelViewerThree({
   const [webGLError, setWebGLError] = useState(null);
   const [retryCount, setRetryCount] = useState(0);
   const [downloadError, setDownloadError] = useState(null);
+  const [stats, setStats] = useState(null);
+  const [normalizationInfo, setNormalizationInfo] = useState(null);
 
   useEffect(() => {
     const fetchAssetInfo = async () => {
@@ -1685,24 +1753,85 @@ export default function ModelViewerThree({
       {/* Header */}
       <div style={{
         padding: '16px 24px',
-        background: 'rgba(0, 0, 0, 0.9)',
+        background: 'rgba(15, 23, 42, 0.95)',
         backdropFilter: 'blur(10px)',
         borderBottom: '1px solid rgba(0,0,0,0.1)',
         display: 'flex',
         justifyContent: 'space-between',
         alignItems: 'center',
+        borderBottom:'3px solid #fff'
       }}>
-        <div>
-          <h3 style={{ margin: 0, color: '#fff' }}>
-            {assetExt?.toLowerCase() === 'zip' ? '📦 Modèle ZIP' : 'Visualisation 3D'}
-          </h3>
-          <p style={{ margin: '4px 0 0', fontSize: 12, color: 'rgba(241, 235, 235, 0.6)' }}>
-            {assetInfo?.title || assetName || 'Modèle 3D'}
-          </p>
-        </div>
+       <div style={{ 
+  display: 'flex', 
+  alignItems: 'center', 
+  gap: 12,
+  padding: '8px 16px',
+  background: 'rgba(255, 255, 255, 0.08)',
+  borderRadius: '12px',
+  border: '1px solid rgba(255, 255, 255, 0.1)',
+  backdropFilter: 'blur(10px)',
+  transition: 'all 0.3s ease',
+  cursor: 'default'
+}}>
+  <div style={{
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    width: 40,
+    height: 40,
+    borderRadius: '10px',
+    background: assetExt?.toLowerCase() === 'zip' 
+      ? 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)'
+      : 'linear-gradient(135deg, #f093fb 0%, #f5576c 100%)',
+    color: '#fff',
+    flexShrink: 0
+  }}>
+    {assetExt?.toLowerCase() === 'zip' ? <FaFileArchive size={18} /> : <FaCube size={18} />}
+  </div>
+  
+  <div style={{ flex: 1, minWidth: 0 }}>
+    <h3 style={{ 
+      margin: 0, 
+      color: '#fff', 
+      fontSize: 15,
+      fontWeight: 600,
+      letterSpacing: '0.3px',
+      display: 'flex',
+      alignItems: 'center',
+      gap: 8
+    }}>
+      {assetExt?.toLowerCase() === 'zip' ? 'Modèle ZIP' : 'Visualisation 3D'}
+      <span style={{
+        fontSize: 10,
+        fontWeight: 500,
+        background: assetExt?.toLowerCase() === 'zip' 
+          ? 'rgba(102, 126, 234, 0.3)'
+          : 'rgba(245, 87, 108, 0.3)',
+        padding: '2px 8px',
+        borderRadius: '12px',
+        color: 'rgba(255,255,255,0.8)',
+        border: '1px solid rgba(255,255,255,0.1)'
+      }}>
+        {assetExt?.toUpperCase() || '3D'}
+      </span>
+    </h3>
+    <p style={{ 
+      margin: '2px 0 0', 
+      fontSize: 12, 
+      color: 'rgba(255, 255, 255, 0.6)',
+      fontWeight: 400,
+      letterSpacing: '0.2px',
+      whiteSpace: 'nowrap',
+      overflow: 'hidden',
+      textOverflow: 'ellipsis'
+    }}>
+      {assetInfo?.title || assetName || 'Modèle 3D'}
+    </p>
+  </div>
+</div>
         <button onClick={onClose} style={{
-          background: 'rgb(255, 255, 255)',
-          border: 'none',
+          background:'transparent',
+          border: '2px solid #fff',
           color: '#ff0000',
           fontSize: 24,
           cursor: 'pointer',
@@ -1713,7 +1842,7 @@ export default function ModelViewerThree({
           alignItems: 'center',
           justifyContent: 'center'
         }}>
-          ×
+          <MdClose size={24} />
         </button>
       </div>
 
@@ -1758,7 +1887,9 @@ export default function ModelViewerThree({
                 animation: 'spin 1s linear infinite',
                 margin: '0 auto 12px auto'
               }} />
-              <p style={{ margin: 0, color: '#666' }}>Chargement du modèle...</p>
+              <p style={{ margin: 0, color: '#666' }}>
+                <FaSpinner style={{ marginRight: 8 }} /> Chargement du modèle...
+              </p>
             </div>
           )}
 
@@ -1777,11 +1908,7 @@ export default function ModelViewerThree({
               zIndex: 20,
               boxShadow: '0 4px 20px rgba(0,0,0,0.1)'
             }}>
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="48" height="48">
-                <circle cx="12" cy="12" r="10" />
-                <line x1="12" y1="8" x2="12" y2="12" />
-                <line x1="12" y1="16" x2="12.01" y2="16" />
-              </svg>
+              <MdError size={48} style={{ color: '#dc2626', marginBottom: 12 }} />
               <p style={{ marginTop: 12, color: '#333' }}>Erreur: {error || webGLError || downloadError}</p>
               <p style={{ fontSize: 12, color: '#666', marginTop: 8 }}>
                 {downloadError ? 'Problème de téléchargement du fichier. Vérifiez votre connexion réseau.' :
@@ -1797,10 +1924,13 @@ export default function ModelViewerThree({
                     border: 'none',
                     borderRadius: 8,
                     color: 'white',
-                    cursor: 'pointer'
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 8
                   }}
                 >
-                  🔄 Réessayer
+                  <FaSpinner /> Réessayer
                 </button>
                 <button
                   onClick={onClose}
@@ -1810,98 +1940,530 @@ export default function ModelViewerThree({
                     border: '1px solid rgba(0,0,0,0.1)',
                     borderRadius: 8,
                     color: '#333',
-                    cursor: 'pointer'
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 8
                   }}
                 >
-                  ✕ Fermer
+                  <MdClose /> Fermer
                 </button>
               </div>
             </div>
           )}
         </div>
 
-        {/* Panneau d'informations */}
+        {/* ============================================================ */}
+        {/* PANNEAU D'INFORMATIONS - VERSION AMÉLIORÉE */}
+        {/* ============================================================ */}
         <div style={{
-          flex: 3,
-          background: 'rgba(0, 0, 0, 0.9)',
+          width: '340px',
+          background: 'rgba(15, 23, 42, 0.95)',
           backdropFilter: 'blur(20px)',
-          borderLeft: '1px solid rgba(255, 255, 255, 0.1)',
-          padding: '24px',
+          borderLeft: '1px solid rgba(255, 255, 255, 0.06)',
+          padding: '0',
           overflowY: 'auto',
           display: 'flex',
           flexDirection: 'column',
-          gap: '20px',
           zIndex: 1,
-          minWidth: '200px',
-          maxWidth: '400px'
+          flexShrink: 0,
+          position: 'relative'
         }}>
-          <div>
-            <h4 style={{ margin: '0 0 8px 0', color: '#ffffff' }}>Informations</h4>
-            <div style={{ height: 2, width: 40, background: '#3B82F6', marginBottom: 20 }} />
+          {/* En-tête du panneau */}
+          <div style={{
+            padding: '20px 24px 16px',
+            borderBottom: '1px solid rgba(255, 255, 255, 0.06)',
+            background: 'rgba(0, 0, 0, 0.3)'
+          }}>
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 12,
+              marginBottom: 4
+            }}>
+              <div style={{
+                width: 32,
+                height: 32,
+                borderRadius: 8,
+                background: 'rgba(59, 130, 246, 0.15)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                color: '#3B82F6'
+              }}>
+                <FaInfoCircle size={16} />
+              </div>
+              <h4 style={{ 
+                margin: 0, 
+                color: '#ffffff', 
+                fontSize: 15,
+                fontWeight: 600,
+                letterSpacing: '0.3px'
+              }}>
+                Détails du modèle
+              </h4>
+            </div>
+            <p style={{
+              margin: '4px 0 0 44px',
+              fontSize: 12,
+              color: 'rgba(255,255,255,0.4)',
+              fontWeight: 400
+            }}>
+              {assetExt?.toUpperCase() || '3D Model'} • {assetInfo?.file_size ? `${(assetInfo.file_size / (1024 * 1024)).toFixed(2)} MB` : ''}
+            </p>
           </div>
 
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-            <div>
-              <label style={{ fontSize: 11, color: 'rgb(255, 255, 255)', display: 'block', marginBottom: 5 }}>NOM</label>
-              <div style={{ fontSize: 14, color: '#d6d5d5', wordBreak: 'break-word', fontWeight: 500 }}>
+          {/* Corps du panneau avec les informations */}
+          <div style={{
+            padding: '20px 24px',
+            flex: 1,
+            overflowY: 'auto'
+          }}>
+            {/* Carte d'informations principales */}
+            <div style={{
+              background: 'rgba(255, 255, 255, 0.03)',
+              borderRadius: 12,
+              padding: '16px',
+              marginBottom: 16,
+              border: '1px solid rgba(121, 41, 41, 0.04)',
+              boxShadow: 'inset 0px 5px 10px 0px rgb(255, 255, 255)'
+            }}>
+              <div style={{
+                fontSize: 13,
+                fontWeight:'bold',
+                color: '#fff',
+                marginBottom: 4,
+                wordBreak: 'break-word'
+              }}>
                 {assetInfo?.title || assetInfo?.name || assetName || 'Sans titre'}
               </div>
-            </div>
-
-            {assetInfo?.description && (
-              <div>
-                <label style={{ fontSize: 11, color: 'rgb(255, 255, 255)', display: 'block', marginBottom: 5 }}>DESCRIPTION</label>
-                <div style={{ fontSize: 13, color: 'rgb(255, 255, 255)', lineHeight: 1.5 }}>
+              {assetInfo?.description && (
+                <div style={{
+                  fontSize: 12,
+                  color: 'rgba(255,255,255,0.6)',
+                  lineHeight: 1.6,
+                  marginTop: 6,
+                  paddingTop: 10,
+                  borderTop: '1px solid rgba(255, 255, 255, 0.05)',
+                  boxShadow: 'inset 0px 5px 10px 0px rgb(255, 255, 255)'
+                }}>
                   {assetInfo.description}
                 </div>
-              </div>
-            )}
-
-            <div>
-              <label style={{ fontSize: 11, color: 'rgb(255, 255, 255)', display: 'block', marginBottom: 5 }}>FORMAT</label>
-              <div style={{ fontSize: 13, color: '#3B82F6', fontWeight: 500 }}>
-                {assetExt?.toUpperCase() || '3D Model'}
-                {assetExt?.toLowerCase() === 'zip' && ' 📦'}
-              </div>
+              )}
             </div>
 
-            {assetInfo?.file_size && (
-              <div>
-                <label style={{ fontSize: 11, color: 'rgb(255, 255, 255)', display: 'block', marginBottom: 5 }}>TAILLE</label>
-                <div style={{ fontSize: 13, color: 'rgb(255, 255, 255)' }}>
-                  {(assetInfo.file_size / (1024 * 1024)).toFixed(2)} MB
-                </div>
-              </div>
-            )}
-
-            {assetInfo?.created_at && (
-              <div>
-                <label style={{ fontSize: 11, color: 'rgb(255, 255, 255)', display: 'block', marginBottom: 5 }}>DATE D'AJOUT</label>
-                <div style={{ fontSize: 13, color: 'rgb(255, 255, 255)' }}>
-                  {new Date(assetInfo.created_at).toLocaleDateString('fr-FR')}
-                </div>
-              </div>
-            )}
-
-            {assetInfo?.visibility && (
-              <div>
-                <label style={{ fontSize: 11, color: 'rgb(255, 255, 255)', display: 'block', marginBottom: 5 }}>VISIBILITÉ</label>
+            {/* Grille d'informations */}
+            <div style={{
+              display: 'grid',
+              gridTemplateColumns: '1fr 1fr',
+              gap: '10px',
+              marginBottom: 16
+            }}>
+              {/* Format */}
+              <div style={{
+                background: 'rgba(255, 255, 255, 0.03)',
+                borderRadius: 10,
+                padding: '12px 14px',
+                border: '1px solid rgba(255, 255, 255, 0.04)',
+                transition: 'all 0.2s',
+                boxShadow: 'inset 0px 5px 10px 0px rgb(255, 255, 255)'
+              }}>
                 <div style={{
-                  fontSize: 13,
-                  color: assetInfo.visibility === 'public' ? '#10b981' : '#f59e0b',
-                  fontWeight: 500,
+                  fontSize: 10,
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.5px',
+                  color: '#fff',
+                  marginBottom: 4,
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 4,
+                  fontWeight:'bold'
+                }}>
+                  <FaCube size={10} /> Format
+                </div>
+                <div style={{
+                  fontSize: 14,
+                  fontWeight: 600,
+                  color: '#3B82F6',
                   display: 'flex',
                   alignItems: 'center',
                   gap: 6
                 }}>
-                  <span>{assetInfo.visibility === 'public' ? '🌍' : '🔒'}</span>
-                  <span>{assetInfo.visibility === 'public' ? 'Public' : 'Privé'}</span>
+                  {assetExt?.toUpperCase() || '3D'}
+                  {assetExt?.toLowerCase() === 'zip' && <FaFileArchive size={12} style={{ color: '#f59e0b' }} />}
+                </div>
+              </div>
+
+              {/* Taille */}
+              <div style={{
+                background: 'rgba(255, 255, 255, 0.03)',
+                borderRadius: 10,
+                padding: '12px 14px',
+                border: '1px solid rgba(255, 255, 255, 0.04)',
+                boxShadow: 'inset 0px 5px 10px 0px rgb(255, 255, 255)'
+              }}>
+                <div style={{
+                  fontSize: 10,
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.5px',
+                  color: '#fff',
+                  marginBottom: 4,
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 4,
+                  fontWeight:'bold'
+                }}>
+                  <FaBox size={10} /> Taille
+                </div>
+                <div style={{
+                  fontSize: 14,
+                  fontWeight: 600,
+                  color: '#3B82F6'
+                }}>
+                  {assetInfo?.file_size ? `${(assetInfo.file_size / (1024 * 1024)).toFixed(2)} MB` : '—'}
+                </div>
+              </div>
+
+              {/* Date d'ajout */}
+              <div style={{
+                background: 'rgba(255, 255, 255, 0.03)',
+                borderRadius: 10,
+                padding: '12px 14px',
+                border: '1px solid rgba(255, 255, 255, 0.04)',
+                gridColumn: assetInfo?.visibility ? 'span 1' : 'span 2',
+                boxShadow: 'inset 0px 5px 10px 0px rgb(255, 255, 255)',
+              }}>
+                <div style={{
+                  fontSize: 10,
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.5px',
+                  color: '#fff',
+                  marginBottom: 4,
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 4,
+                fontWeight:'bold'
+                }}>
+                  <FaCalendarAlt size={10} /> Ajouté le
+                </div>
+                <div style={{
+                  fontSize: 13,
+                  fontWeight: 500,
+                  color: '#3B82F6',
+                  fontWeight:'bold'
+                }}>
+                  {assetInfo?.created_at ? new Date(assetInfo.created_at).toLocaleDateString('fr-FR', {
+                    day: 'numeric',
+                    month: 'long',
+                    year: 'numeric'
+                  }) : '—'}
+                </div>
+              </div>
+
+              {/* Visibilité */}
+              {assetInfo?.visibility && (
+                <div style={{
+                  background: 'rgba(255, 255, 255, 0.03)',
+                  borderRadius: 10,
+                  padding: '12px 14px',
+                  border: '1px solid rgba(255, 255, 255, 0.04)',
+                  boxShadow:'inset 0px 5px 10px 0px rgb(255, 255, 255)'
+                }}>
+                  <div style={{
+                    fontSize: 10,
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.5px',
+                    color: '#fff',
+                    marginBottom: 4,
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 4,
+                    fontWeight:'bold'
+                  }}>
+                    <MdVisibility size={10} /> Visibilité
+                  </div>
+                  <div style={{
+                    fontSize: 13,
+                    fontWeight: 500,
+                    color: assetInfo.visibility === 'public' ? '#10b981' : '#f59e0b',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 6
+                  }}>
+                    {assetInfo.visibility === 'public' ? <FaGlobe size={12} /> : <FaLock size={12} />}
+                    {assetInfo.visibility === 'public' ? 'Public' : 'Privé'}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Statistiques du modèle (si chargé) */}
+            {stats && (
+              <div style={{
+                background: 'rgba(255, 255, 255, 0.02)',
+                borderRadius: 10,
+                padding: '14px 16px',
+                border: '1px solid rgba(255, 255, 255, 0.04)',
+                marginBottom: 16
+              }}>
+                <div style={{
+                  fontSize: 10,
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.5px',
+                  color: 'rgba(255,255,255,0.3)',
+                  marginBottom: 10,
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 4
+                }}>
+                  <FaLayerGroup size={10} /> Statistiques 3D
+                </div>
+                <div style={{
+                  display: 'grid',
+                  gridTemplateColumns: '1fr 1fr 1fr',
+                  gap: 8
+                }}>
+                  <div style={{ textAlign: 'center' }}>
+                    <div style={{
+                      fontSize: 16,
+                      fontWeight: 700,
+                      color: '#ffffff'
+                    }}>
+                      {stats.vertices?.toLocaleString() || '—'}
+                    </div>
+                    <div style={{
+                      fontSize: 9,
+                      color: 'rgba(255,255,255,0.3)',
+                      textTransform: 'uppercase',
+                      letterSpacing: '0.3px'
+                    }}>
+                      Sommets
+                    </div>
+                  </div>
+                  <div style={{ textAlign: 'center' }}>
+                    <div style={{
+                      fontSize: 16,
+                      fontWeight: 700,
+                      color: '#ffffff'
+                    }}>
+                      {stats.triangles?.toLocaleString() || '—'}
+                    </div>
+                    <div style={{
+                      fontSize: 9,
+                      color: 'rgba(255,255,255,0.3)',
+                      textTransform: 'uppercase',
+                      letterSpacing: '0.3px'
+                    }}>
+                      Triangles
+                    </div>
+                  </div>
+                  <div style={{ textAlign: 'center' }}>
+                    <div style={{
+                      fontSize: 16,
+                      fontWeight: 700,
+                      color: '#ffffff'
+                    }}>
+                      {stats.materials || '—'}
+                    </div>
+                    <div style={{
+                      fontSize: 9,
+                      color: 'rgba(255,255,255,0.3)',
+                      textTransform: 'uppercase',
+                      letterSpacing: '0.3px'
+                    }}>
+                      Matériaux
+                    </div>
+                  </div>
+                  <div style={{ textAlign: 'center', gridColumn: 'span 3' }}>
+                    <div style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: 12,
+                      paddingTop: 6,
+                      borderTop: '1px solid rgba(255,255,255,0.05)'
+                    }}>
+                      <div style={{
+                        fontSize: 11,
+                        color: 'rgba(255,255,255,0.5)'
+                      }}>
+                        <MdImage size={12} style={{ marginRight: 4, verticalAlign: 'middle' }} />
+                        {stats.textures || 0} textures
+                      </div>
+                      {normalizationInfo && normalizationInfo.scale !== 1 && (
+                        <div style={{
+                          fontSize: 11,
+                          color: '#f59e0b'
+                        }}>
+                          <FaRuler size={12} style={{ marginRight: 4, verticalAlign: 'middle' }} />
+                          ×{normalizationInfo.scale.toFixed(2)}
+                        </div>
+                      )}
+                    </div>
+                  </div>
                 </div>
               </div>
             )}
+
+            {/* Dimensions du modèle */}
+            {stats?.dimensions && (
+              <div style={{
+                background: 'rgba(255, 255, 255, 0.02)',
+                borderRadius: 10,
+                padding: '12px 16px',
+                border: '1px solid rgba(255, 255, 255, 0.04)',
+                marginBottom: 16
+              }}>
+                <div style={{
+                  fontSize: 10,
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.5px',
+                  color: 'rgba(255,255,255,0.3)',
+                  marginBottom: 8,
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 4
+                }}>
+                  <FaRuler size={10} /> Dimensions
+                </div>
+                <div style={{
+                  display: 'grid',
+                  gridTemplateColumns: '1fr 1fr 1fr',
+                  gap: 4,
+                  textAlign: 'center'
+                }}>
+                  <div>
+                    <div style={{
+                      fontSize: 14,
+                      fontWeight: 600,
+                      color: '#3B82F6'
+                    }}>
+                      {stats.dimensions.width?.toFixed(2) || '0.00'}
+                    </div>
+                    <div style={{
+                      fontSize: 9,
+                      color: 'rgba(255,255,255,0.25)',
+                      textTransform: 'uppercase',
+                      letterSpacing: '0.3px'
+                    }}>
+                      Largeur
+                    </div>
+                  </div>
+                  <div>
+                    <div style={{
+                      fontSize: 14,
+                      fontWeight: 600,
+                      color: '#10b981'
+                    }}>
+                      {stats.dimensions.height?.toFixed(2) || '0.00'}
+                    </div>
+                    <div style={{
+                      fontSize: 9,
+                      color: 'rgba(255,255,255,0.25)',
+                      textTransform: 'uppercase',
+                      letterSpacing: '0.3px'
+                    }}>
+                      Hauteur
+                    </div>
+                  </div>
+                  <div>
+                    <div style={{
+                      fontSize: 14,
+                      fontWeight: 600,
+                      color: '#8B5CF6'
+                    }}>
+                      {stats.dimensions.depth?.toFixed(2) || '0.00'}
+                    </div>
+                    <div style={{
+                      fontSize: 9,
+                      color: 'rgba(255,255,255,0.25)',
+                      textTransform: 'uppercase',
+                      letterSpacing: '0.3px'
+                    }}>
+                      Profondeur
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Tags / Badges */}
+            <div style={{
+              display: 'flex',
+              flexWrap: 'wrap',
+              gap: 6,
+              marginBottom: 16
+            }}>
+              {assetExt && (
+                <span style={{
+                  padding: '4px 12px',
+                  borderRadius: 20,
+                  fontSize: 10,
+                  fontWeight: 500,
+                  background: 'rgba(59, 130, 246, 0.12)',
+                  color: '#3B82F6',
+                  border: '1px solid rgba(59, 130, 246, 0.15)'
+                }}>
+                  {assetExt.toUpperCase()}
+                </span>
+              )}
+              {assetInfo?.visibility === 'public' && (
+                <span style={{
+                  padding: '4px 12px',
+                  borderRadius: 20,
+                  fontSize: 10,
+                  fontWeight: 500,
+                  background: 'rgba(16, 185, 129, 0.12)',
+                  color: '#10b981',
+                  border: '1px solid rgba(16, 185, 129, 0.15)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 4
+                }}>
+                  <FaGlobe size={10} /> Public
+                </span>
+              )}
+              {assetInfo?.visibility === 'private' && (
+                <span style={{
+                  padding: '4px 12px',
+                  borderRadius: 20,
+                  fontSize: 10,
+                  fontWeight: 500,
+                  background: 'rgba(245, 158, 11, 0.12)',
+                  color: '#f59e0b',
+                  border: '1px solid rgba(245, 158, 11, 0.15)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 4
+                }}>
+                  <FaLock size={10} /> Privé
+                </span>
+              )}
+              {assetExt?.toLowerCase() === 'zip' && (
+                <span style={{
+                  padding: '4px 12px',
+                  borderRadius: 20,
+                  fontSize: 10,
+                  fontWeight: 500,
+                  background: 'rgba(245, 158, 11, 0.12)',
+                  color: '#f59e0b',
+                  border: '1px solid rgba(245, 158, 11, 0.15)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 4
+                }}>
+                  <FaFileArchive size={10} /> ZIP
+                </span>
+              )}
+            </div>
           </div>
 
-          <div style={{ marginTop: 'auto', paddingTop: 20 }}>
+          {/* Pied du panneau avec bouton de téléchargement */}
+          <div style={{
+            padding: '16px 24px 20px',
+            borderTop: '1px solid rgba(255, 255, 255, 0.06)',
+            background: 'rgba(0, 0, 0, 0.3)'
+          }}>
             <button
               onClick={async () => {
                 try {
@@ -1924,27 +2486,59 @@ export default function ModelViewerThree({
               }}
               style={{
                 width: '100%',
-                padding: '12px',
+                padding: '12px 20px',
                 background: 'linear-gradient(135deg, #3B82F6 0%, #2563EB 100%)',
                 border: 'none',
-                borderRadius: 8,
+                borderRadius: 10,
                 color: 'white',
                 cursor: 'pointer',
                 fontSize: 14,
-                fontWeight: 500,
-                transition: 'all 0.2s'
+                fontWeight: 600,
+                transition: 'all 0.25s ease',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: 10,
+                boxShadow: '0 4px 16px rgba(59, 130, 246, 0.25)'
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.transform = 'translateY(-2px)';
+                e.currentTarget.style.boxShadow = '0 6px 24px rgba(59, 130, 246, 0.35)';
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.transform = 'translateY(0)';
+                e.currentTarget.style.boxShadow = '0 4px 16px rgba(59, 130, 246, 0.25)';
               }}
             >
-              📥 Télécharger le modèle
+              <FaDownload size={16} />
+              Télécharger le modèle
             </button>
           </div>
         </div>
+        {/* ============================================================ */}
+        {/* FIN PANNEAU D'INFORMATIONS */}
+        {/* ============================================================ */}
       </div>
 
       <style>{`
         @keyframes spin {
           from { transform: rotate(0deg); }
           to { transform: rotate(360deg); }
+        }
+        
+        /* Scrollbar personnalisée pour le panneau d'informations */
+        .info-panel::-webkit-scrollbar {
+          width: 4px;
+        }
+        .info-panel::-webkit-scrollbar-track {
+          background: rgba(255, 255, 255, 0.02);
+        }
+        .info-panel::-webkit-scrollbar-thumb {
+          background: rgba(255, 255, 255, 0.1);
+          border-radius: 2px;
+        }
+        .info-panel::-webkit-scrollbar-thumb:hover {
+          background: rgba(255, 255, 255, 0.2);
         }
       `}</style>
     </div>

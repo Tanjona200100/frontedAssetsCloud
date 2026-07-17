@@ -1,4 +1,4 @@
-// App.js
+// src/App.js
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import Login from './auth/login/login';
@@ -139,9 +139,25 @@ function App() {
             } 
           />
           
-          {/* Dashboard Utilisateur - protégé */}
+          {/* Dashboard Utilisateur - routes avec paramètres */}
           <Route 
-            path="/userdashboard/*" 
+            path="/userdashboard" 
+            element={
+              <ProtectedRoute>
+                <UserDashboard />
+              </ProtectedRoute>
+            } 
+          />
+          <Route 
+            path="/userdashboard/:panel" 
+            element={
+              <ProtectedRoute>
+                <UserDashboard />
+              </ProtectedRoute>
+            } 
+          />
+          <Route 
+            path="/userdashboard/project-assets/:projectId" 
             element={
               <ProtectedRoute>
                 <UserDashboard />

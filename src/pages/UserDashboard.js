@@ -1,22 +1,22 @@
 // src/pages/UserDashboard.jsx
 import React, { useState, useEffect, createContext, useMemo, useCallback, useRef } from 'react';
+import { useNavigate, useParams, useLocation } from 'react-router-dom';
 import Sidebar from '../components/Sidebar';
 import Topbar from '../components/Topbar';
 import DashboardPanel from '../components/UserDashboard/DashboardPanel';
 import ProjectsPanel from '../components/UserDashboard/ProjectsPanel';
-import ProjectAssetsPage from '../components/AdminDashboard/ProjectAssetsPage'; // ← AJOUT
-import AssetsPanel from '../components/UserDashboard/AssetsPanel';
+import ProjectAssetsPage from '../components/AdminDashboard/ProjectAssetsPage';
+import AssetsPanel from '../components/UserDashboard/AssetsPanel/AssetsPanel';
 import HistoryPanel from '../components/UserDashboard/HistoryPanel';
 import ProfilePanel from '../components/UserDashboard/ProfilePanel';
 import SettingsPanel from '../components/UserDashboard/SettingsPanel';
 import PreviewModal from '../components/UserDashboard/PreviewModal';
 import FolderModal from '../components/UserDashboard/FolderModal';
-import CollectionModal from '../components/UserDashboard/CollectionModal';
 import '../components/UserDashboard/userDashboard.css';
 
 export const UserContext = createContext();
 
-const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://192.168.2.160:5000/api';
+const API_BASE_URL = process.env.REACT_APP_API_URL;
 
 // Configuration unifiée pour les deux rôles
 const getConfig = (role, userData = {}) => {
@@ -71,9 +71,13 @@ const getConfig = (role, userData = {}) => {
 };
 
 export default function UserDashboard({ userData = {} }) {
+  const navigate = useNavigate();
+  const location = useLocation();
+  const { panel: urlPanel, projectId: urlProjectId } = useParams();
+  
   const [role, setRole] = useState(null);
   const [panel, setPanel] = useState('dashboard');
-  const [selectedProjectId, setSelectedProjectId] = useState(null); // ← AJOUT
+  const [selectedProjectId, setSelectedProjectId] = useState(null);
   const [modals, setModals] = useState({ folder: false, collection: false, preview: false });
   const [previewData, setPreviewData] = useState({ name: '', type: '' });
   const [loading, setLoading] = useState(true);
@@ -82,6 +86,110 @@ export default function UserDashboard({ userData = {} }) {
   
   const isMounted = useRef(true);
   const dataFetchedRef = useRef(false);
+  const isInitialLoad = useRef(true);
+  const navigationInProgress = useRef(false);
+
+  // Fonction pour mettre à jour l'URL
+  const updateUrl = useCallback((panelName, projectId = null) => {
+    if (navigationInProgress.current) return;
+    
+    let path = '/userdashboard';
+    
+    if (panelName === 'project-assets' && projectId) {
+      path = `/userdashboard/project-assets/${projectId}`;
+    } else if (panelName && panelName !== 'dashboard') {
+      path = `/userdashboard/${panelName}`;
+    }
+    
+    console.log('🔄 Mise à jour URL:', path);
+    navigationInProgress.current = true;
+    navigate(path, { replace: true });
+    setTimeout(() => {
+      navigationInProgress.current = false;
+    }, 100);
+  }, [navigate]);
+
+  // Fonction pour ouvrir les assets d'un projet
+  const openProjectAssets = useCallback((projectId) => {
+    console.log('🔵 UserDashboard - openProjectAssets appelé avec ID:', projectId);
+    if (!projectId) {
+      console.warn('⚠️ Aucun projectId fourni');
+      return;
+    }
+    setSelectedProjectId(projectId);
+    setPanel('project-assets');
+    setSearchQuery('');
+    updateUrl('project-assets', projectId);
+  }, [updateUrl]);
+
+  // Fonction pour revenir à la liste des projets
+  const backToProjects = useCallback(() => {
+    console.log('🔵 UserDashboard - backToProjects appelé');
+    setSelectedProjectId(null);
+    setPanel('projects');
+    setSearchQuery('');
+    updateUrl('projects');
+  }, [updateUrl]);
+
+  // Navigation standard (avec mise à jour URL)
+  const handleSetPanel = useCallback((newPanel) => {
+    console.log('🟢 Changement panel:', newPanel);
+    
+    if (newPanel === 'project-assets') {
+      // Ne pas changer le panel si c'est project-assets sans ID
+      if (!selectedProjectId) {
+        console.warn('⚠️ Impossible de naviguer vers project-assets sans ID');
+        return;
+      }
+    }
+    
+    setPanel(newPanel);
+    if (newPanel !== 'project-assets') {
+      setSelectedProjectId(null);
+    }
+    updateUrl(newPanel, newPanel === 'project-assets' ? selectedProjectId : null);
+  }, [selectedProjectId, updateUrl]);
+
+  // Synchronisation avec l'URL au chargement
+  useEffect(() => {
+    if (!role || !isInitialLoad.current) return;
+    
+    console.log('🔄 Synchronisation avec URL:', { urlPanel, urlProjectId, pathname: location.pathname });
+    
+    // Vérifier si on est sur la page des assets d'un projet
+    if (urlPanel === 'project-assets' && urlProjectId) {
+      setSelectedProjectId(urlProjectId);
+      setPanel('project-assets');
+      console.log(`✅ Chargement direct des assets du projet ${urlProjectId}`);
+    } 
+    // Vérifier si on est sur un autre panel
+    else if (urlPanel && ['dashboard', 'projects', 'assets', 'history', 'profile', 'settings'].includes(urlPanel)) {
+      setPanel(urlPanel);
+      console.log(`✅ Chargement direct du panel ${urlPanel}`);
+    } 
+    // Si pas de panel spécifié ou dashboard
+    else if (!urlPanel || urlPanel === 'dashboard' || location.pathname === '/userdashboard') {
+      setPanel('dashboard');
+      if (location.pathname !== '/userdashboard' && !location.pathname.includes('/userdashboard/dashboard')) {
+        updateUrl('dashboard');
+      }
+    }
+    
+    isInitialLoad.current = false;
+  }, [role, urlPanel, urlProjectId, location.pathname, updateUrl]);
+
+  // Validation du panel
+  useEffect(() => {
+    if (!role || isInitialLoad.current) return;
+    
+    const validPanels = ['dashboard', 'projects', 'project-assets', 'assets', 'history', 'profile', 'settings'];
+    console.log('🟢 Validation panel:', panel, 'Panel valides:', validPanels);
+    
+    if (!validPanels.includes(panel)) {
+      console.log('🟡 Panel invalide, reset à dashboard');
+      handleSetPanel('dashboard');
+    }
+  }, [role, panel, handleSetPanel]);
 
   const openModal = useCallback((modalName) => {
     setModals(prev => ({ ...prev, [modalName]: true }));
@@ -94,20 +202,6 @@ export default function UserDashboard({ userData = {} }) {
   const openPreview = useCallback((name, type = 'file') => {
     setPreviewData({ name, type });
     setModals(prev => ({ ...prev, preview: true }));
-  }, []);
-
-  // ← AJOUT: Fonction pour ouvrir les assets d'un projet
-  const openProjectAssets = useCallback((projectId) => {
-    console.log('🔵 openProjectAssets appelé avec ID:', projectId);
-    setSelectedProjectId(projectId);
-    setPanel('project-assets');
-  }, []);
-
-  // ← AJOUT: Fonction pour revenir à la liste des projets
-  const backToProjects = useCallback(() => {
-    console.log('🔵 backToProjects appelé');
-    setSelectedProjectId(null);
-    setPanel('projects');
   }, []);
 
   // Fonction pour récupérer les données utilisateur depuis /users/me
@@ -216,18 +310,44 @@ export default function UserDashboard({ userData = {} }) {
     };
   }, [userData, fetchUserProfile]);
 
-  // Validation du panel - AJOUT 'project-assets'
+  // Sauvegarder l'état dans sessionStorage pour restauration après rechargement
   useEffect(() => {
-    if (!role) return;
-    
-    const validPanels = ['dashboard', 'projects', 'project-assets', 'assets', 'history', 'profile', 'settings'];
-    console.log('🟢 Panel actuel:', panel, 'Panel valides:', validPanels);
-    
-    if (!validPanels.includes(panel)) {
-      console.log('🟡 Panel invalide, reset à dashboard');
-      setPanel('dashboard');
+    if (!loading && role) {
+      const stateToSave = {
+        panel,
+        selectedProjectId,
+        timestamp: Date.now()
+      };
+      sessionStorage.setItem('userDashboardState', JSON.stringify(stateToSave));
     }
-  }, [role, panel]);
+  }, [panel, selectedProjectId, loading, role]);
+
+  // Restaurer l'état depuis sessionStorage si nécessaire
+  useEffect(() => {
+    if (!loading && role && isInitialLoad.current) {
+      const savedState = sessionStorage.getItem('userDashboardState');
+      if (savedState) {
+        try {
+          const parsed = JSON.parse(savedState);
+          // Ne restaurer que si l'état est récent (moins de 5 minutes)
+          if (Date.now() - parsed.timestamp < 300000) {
+            console.log('🔄 Restauration depuis sessionStorage:', parsed);
+            if (parsed.panel === 'project-assets' && parsed.selectedProjectId) {
+              setSelectedProjectId(parsed.selectedProjectId);
+              setPanel('project-assets');
+              // Mettre à jour l'URL
+              updateUrl('project-assets', parsed.selectedProjectId);
+            } else if (parsed.panel && parsed.panel !== 'dashboard') {
+              setPanel(parsed.panel);
+              updateUrl(parsed.panel);
+            }
+          }
+        } catch (e) {
+          console.error('Erreur restauration état:', e);
+        }
+      }
+    }
+  }, [loading, role, updateUrl]);
 
   // Mémoriser la config
   const config = useMemo(() => {
@@ -247,15 +367,15 @@ export default function UserDashboard({ userData = {} }) {
     role,
     setRole,
     panel,
-    setPanel,
+    setPanel: handleSetPanel,
     config,
     openModal,
     closeModal,
     openPreview,
-    openProjectAssets, // ← AJOUT
-    backToProjects, // ← AJOUT
+    openProjectAssets,
+    backToProjects,
     userData: contextUserData
-  }), [role, panel, config, contextUserData, openModal, closeModal, openPreview, openProjectAssets, backToProjects]);
+  }), [role, panel, config, contextUserData, openModal, closeModal, openPreview, openProjectAssets, backToProjects, handleSetPanel]);
 
   const getCurrentPanel = useCallback(() => {
     console.log('🟢 getCurrentPanel - Panel:', panel, 'SelectedProjectId:', selectedProjectId);
@@ -267,15 +387,19 @@ export default function UserDashboard({ userData = {} }) {
         return <DashboardPanel />;
       case 'projects':
         return <ProjectsPanel />;
-      case 'project-assets': // ← AJOUT
+      case 'project-assets':
         console.log('🟢 Affichage de ProjectAssetsPage avec ID:', selectedProjectId);
         if (!selectedProjectId) {
           console.log('🟡 Pas de selectedProjectId, retour aux projets');
           return <ProjectsPanel />;
         }
-        return <ProjectAssetsPage projectId={selectedProjectId} onBack={backToProjects} />;
+        return <ProjectAssetsPage 
+          projectId={selectedProjectId} 
+          onBack={backToProjects} 
+          searchQuery={searchQuery} 
+        />;
       case 'assets':
-  return <AssetsPanel searchQuery={searchQuery} />;
+        return <AssetsPanel searchQuery={searchQuery} />;
       case 'history':
         return <HistoryPanel />;
       case 'profile':
@@ -309,7 +433,7 @@ export default function UserDashboard({ userData = {} }) {
   return (
     <UserContext.Provider value={contextValue}>
       <div className="dashboard-shell">
-        <Sidebar activePanel={panel} setActivePanel={setPanel} />
+        <Sidebar activePanel={panel} setActivePanel={handleSetPanel} />
         <div className="dashboard-main">
           <Topbar 
             activePanel={panel} 
@@ -323,7 +447,6 @@ export default function UserDashboard({ userData = {} }) {
       </div>
       
       <FolderModal isOpen={modals.folder} onClose={() => closeModal('folder')} />
-      <CollectionModal isOpen={modals.collection} onClose={() => closeModal('collection')} />
       <PreviewModal isOpen={modals.preview} onClose={() => closeModal('preview')} data={previewData} />
     </UserContext.Provider>
   );

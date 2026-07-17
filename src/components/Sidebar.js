@@ -16,7 +16,6 @@ import { TbCategory } from "react-icons/tb";
 import { FaFolderOpen } from "react-icons/fa6";
 import { LuUser } from "react-icons/lu";
 
-
 const API_BASE_URL = process.env.REACT_APP_API_URL;
 
 const apiRequest = async (endpoint, options = {}) => {
@@ -42,7 +41,7 @@ const apiRequest = async (endpoint, options = {}) => {
 export default function Sidebar({ activePanel, setActivePanel }) {
   const navigate = useNavigate();
   const location = useLocation();
-  const isAdminRoute = location.pathname.startsWith('/admin');
+  const isAdminRoute = location.pathname.startsWith('/admindashboard');
 
   const userContext = useContext(UserContext);
   const { user, logout } = useAuth();
@@ -56,8 +55,6 @@ export default function Sidebar({ activePanel, setActivePanel }) {
   const [userAccent, setUserAccent] = useState('#3B82F6');
   const [storageText, setStorageText] = useState('18.4 / 50 GB');
   const [storagePercent, setStoragePercent] = useState(37);
-  const [totalUsers, setTotalUsers] = useState(0);
-  const [loadingUsers, setLoadingUsers] = useState(false);
   
   // Références
   const isMounted = useRef(true);
@@ -96,30 +93,29 @@ export default function Sidebar({ activePanel, setActivePanel }) {
     }
   }, []);
 
-  // Navigation items
+  // Navigation items SANS badges pour users, assets et gestion
   const getNavItems = useCallback(() => {
     if (isAdmin) {
       return [
         { id: "dashboard", label: "Dashboard", icon: "dashboard" },
         { id: "profil", label: "Profil", icon: "profil" },
-        { id: "users", label: "Utilisateurs", icon: "users", badge: totalUsers.toString(), showBadge: true },
-        { id: "assets", label: "Assets", icon: "assets", badge: "3", badgeRed: true },
+        { id: "users", label: "Utilisateurs", icon: "users", showBadge: false }, // ❌ Badge retiré
+        { id: "assets", label: "Assets", icon: "assets", showBadge: false }, // ❌ Badge retiré
         { id: "stats", label: "Statistiques", icon: "stats" },
-        { id: "roles", label: "Rôles & Accès", icon: "roles" },
-        { id: "gestion", label: "Gestions de projets", icon: "folder" },
+        { id: "gestion", label: "Gestions de projets", icon: "folder", showBadge: false }, // ❌ Badge retiré
         { id: "categorie", label: "Categorie", icon: "categorie" },
         { id: "settings", label: "Paramètres", icon: "settings" },
       ];
     }
     return [
       { id: "dashboard", label: "Dashboard", icon: "dashboard" },
-      { id: "projects", label: "Projets", icon: "projects", badge: "12" },
-      { id: "assets", label: "Assets", icon: "assets", badge: "284" },
+      { id: "projects", label: "Projets", icon: "projects", showBadge: false }, // ❌ Badge retiré
+      { id: "assets", label: "Assets", icon: "assets", showBadge: false }, // ❌ Badge retiré
       { id: "history", label: "Historique", icon: "history" },
       { id: "profile", label: "Profil", icon: "profile" },
       { id: "settings", label: "Paramètres", icon: "settings" }
     ];
-  }, [isAdmin, totalUsers]);
+  }, [isAdmin]);
 
   const getIcon = useCallback((iconName) => {
     const adminIcons = {
@@ -127,7 +123,6 @@ export default function Sidebar({ activePanel, setActivePanel }) {
       users: <FiUsers />,
       assets: <FaRegImages />,
       stats: <IoIosStats />,
-      roles: <GiPoliceBadge />,
       folder : <FaFolderOpen />,
       categorie :<TbCategory />,
       settings: <CiSettings />,
@@ -148,35 +143,7 @@ export default function Sidebar({ activePanel, setActivePanel }) {
     return iconSvg ? <span dangerouslySetInnerHTML={{ __html: iconSvg }} /> : null;
   }, [isAdmin]);
 
-  // Récupérer le nombre d'utilisateurs pour admin
-  const fetchTotalUsers = useCallback(async () => {
-    if (!isAdmin || !isAdminRoute) return;
-    try {
-      setLoadingUsers(true);
-      const data = await apiRequest('/admin/users/pending');
-      const users = data.users || [];
-      if (isMounted.current) {
-        setTotalUsers(users.length);
-      }
-    } catch (error) {
-      console.error("Erreur:", error);
-    } finally {
-      if (isMounted.current) {
-        setLoadingUsers(false);
-      }
-    }
-  }, [isAdmin, isAdminRoute]);
-
-  // Effet pour les données admin
-  useEffect(() => {
-    if (isAdmin && isAdminRoute) {
-      fetchTotalUsers();
-      const interval = setInterval(fetchTotalUsers, 30000);
-      return () => clearInterval(interval);
-    }
-  }, [isAdmin, isAdminRoute, fetchTotalUsers]);
-
-  // Effet pour les données utilisateur admin (route admin)
+  // Effet pour les données utilisateur admin
   useEffect(() => {
     if (isAdminRoute && user) {
       const firstName = user.first_name || '';
@@ -191,7 +158,7 @@ export default function Sidebar({ activePanel, setActivePanel }) {
     }
   }, [user, isAdminRoute, isAdmin, formatRoleForDisplay, formatRoleForBadge]);
 
-  // Effet pour les données utilisateur non-admin depuis le contexte
+  // Effet pour les données utilisateur non-admin
   useEffect(() => {
     if (!isAdminRoute && userContext) {
       const userData = userContext.userData || {};
@@ -225,7 +192,7 @@ export default function Sidebar({ activePanel, setActivePanel }) {
     }
   }, [userContext, isAdminRoute, formatRoleForDisplay, formatRoleForBadge]);
 
-  // 🔥 EFFET SUPPLEMENTAIRE: Charger directement depuis l'API si l'image est absente
+  // Charger l'image depuis l'API si absente
   useEffect(() => {
     const fetchProfileImage = async () => {
       if (isAdminRoute) return;
@@ -233,7 +200,6 @@ export default function Sidebar({ activePanel, setActivePanel }) {
       const token = localStorage.getItem('token');
       if (!token) return;
       
-      // Si on a déjà une image, on ne recharge pas
       if (profileImageUrl) return;
       
       try {
@@ -253,7 +219,6 @@ export default function Sidebar({ activePanel, setActivePanel }) {
             console.log('📸 Image chargée depuis API directe:', userProfile.profile_image_url.substring(0, 100));
             setProfileImageUrl(userProfile.profile_image_url);
             
-            // Mettre à jour localStorage
             const storedUser = localStorage.getItem('user');
             if (storedUser) {
               const parsedUser = JSON.parse(storedUser);
@@ -290,10 +255,10 @@ export default function Sidebar({ activePanel, setActivePanel }) {
       localStorage.removeItem('user');
       localStorage.removeItem('expiresAt');
       sessionStorage.clear();
-      navigate(isAdminRoute ? '/admin/login' : '/login', { replace: true });
+      navigate(isAdminRoute ? '/login' : '/login', { replace: true });
     } catch (error) {
       console.error('Erreur:', error);
-      navigate(isAdminRoute ? '/admin/login' : '/login', { replace: true });
+      navigate('/login', { replace: true });
     } finally {
       setIsLoggingOut(false);
     }
@@ -368,10 +333,15 @@ export default function Sidebar({ activePanel, setActivePanel }) {
             <div
               key={item.id}
               className={`nav-item ${currentPanel === item.id ? "active" : ""}`}
-              onClick={() => handleSetPanel && handleSetPanel(item.id)}
+              onClick={() => {
+                if (handleSetPanel) {
+                  handleSetPanel(item.id);
+                }
+              }}
             >
               {getIcon(item.icon)}
               {item.label}
+              {/* Afficher le badge uniquement si showBadge n'est pas false */}
               {item.showBadge !== false && item.badge && (
                 <span className={`nav-badge ${item.badgeRed ? "red" : ""}`}>
                   {item.badge}

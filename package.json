@@ -19,6 +19,7 @@
     "react-scripts": "5.0.1",
     "three": "^0.185.1",
     "three-stdlib": "^2.36.1",
+    "unrar-js": "^0.2.3",
     "web-vitals": "^2.1.4"
   },
   "scripts": {
@@ -26,6 +27,11 @@
     "build": "react-scripts build",
     "test": "react-scripts test",
     "eject": "react-scripts eject"
+  },
+  "overrides": {
+    "stats-gl": {
+      "three": "0.185.1"
+    }
   },
   "eslintConfig": {
     "extends": [

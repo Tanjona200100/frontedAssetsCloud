@@ -1,15 +1,36 @@
 // src/components/UserDashboard/ProfilePanel.jsx
 import React, { useContext, useState, useEffect } from 'react';
 import { UserContext } from '../../pages/UserDashboard';
+import { 
+  FaUser, FaUserEdit, FaEnvelope, FaLock, FaKey, FaSave, 
+  FaUndo, FaCamera, FaUserCircle, FaIdCard, FaCalendarAlt,
+  FaUserTag, FaPen, FaImage, FaSpinner, FaCheckCircle,
+  FaExclamationCircle, FaTimesCircle
+} from 'react-icons/fa';
+import { 
+  MdPerson, MdEmail, MdLock, MdKey, MdSave, MdUndo,
+  MdPhotoCamera, MdEdit, MdCalendarToday, MdBadge,
+  MdDescription, MdSecurity
+} from 'react-icons/md';
 
-// Configuration API
-const API_BASE_URL = process.env.REACT_APP_API_BASE_URL  ;
+const API_BASE_URL = process.env.REACT_APP_API_BASE_URL || 'http://localhost:5000/api';
 
-export default function ProfilePanel() {
-  const { config, role, setConfig } = useContext(UserContext);
-  const isGfx = role === 'gfx';
+export default function ProfilePanel({ searchQuery }) {
+  // ===== HOOKS =====
+  const context = useContext(UserContext);
   
-  // États pour le profil
+  const defaultConfig = {
+    name: 'Administrateur',
+    init: 'AD',
+    role: 'admin',
+    ava: '#3b82f6'
+  };
+
+  const config = context?.config || defaultConfig;
+  const role = context?.role || 'admin';
+  const setConfig = context?.setConfig || (() => {});
+
+  // ===== ÉTATS =====
   const [profile, setProfile] = useState({
     first_name: '',
     last_name: '',
@@ -25,7 +46,6 @@ export default function ProfilePanel() {
   const [error, setError] = useState(null);
   const [success, setSuccess] = useState(null);
   
-  // États pour le changement de mot de passe
   const [passwordData, setPasswordData] = useState({
     currentPassword: '',
     newPassword: '',
@@ -34,15 +54,22 @@ export default function ProfilePanel() {
   const [changingPassword, setChangingPassword] = useState(false);
   const [passwordError, setPasswordError] = useState(null);
   const [passwordSuccess, setPasswordSuccess] = useState(null);
-  
-  // Formatage de la date
+
+  // ===== FONCTIONS UTILITAIRES =====
   const formatDate = (dateString) => {
     if (!dateString) return 'Date inconnue';
-    const date = new Date(dateString);
-    return date.toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' });
+    try {
+      const date = new Date(dateString);
+      return date.toLocaleDateString('fr-FR', { 
+        day: 'numeric',
+        month: 'long', 
+        year: 'numeric' 
+      });
+    } catch {
+      return 'Date inconnue';
+    }
   };
-  
-  // Redimensionner et optimiser l'image
+
   const resizeAndOptimizeImage = (file) => {
     return new Promise((resolve, reject) => {
       const reader = new FileReader();
@@ -51,12 +78,10 @@ export default function ProfilePanel() {
         const img = new Image();
         img.src = e.target.result;
         img.onload = () => {
-          // Créer un canvas pour redimensionner
           const canvas = document.createElement('canvas');
           let width = img.width;
           let height = img.height;
           
-          // Limiter la taille maximale à 200x200 pixels
           const maxSize = 200;
           if (width > height) {
             if (width > maxSize) {
@@ -75,14 +100,11 @@ export default function ProfilePanel() {
           const ctx = canvas.getContext('2d');
           ctx.drawImage(img, 0, 0, width, height);
           
-          // Convertir en JPEG avec qualité réduite
           const optimizedBase64 = canvas.toDataURL('image/jpeg', 0.7);
           
-          // Vérifier la taille (max 50KB après optimisation)
-          const sizeInBytes = Math.ceil(optimizedBase64.length * 0.75); // Approximation base64 -> bytes
+          const sizeInBytes = Math.ceil(optimizedBase64.length * 0.75);
           if (sizeInBytes > 50 * 1024) {
-            // Si encore trop grand, réduire davantage la qualité
-            const smallerBase64 = canvas.toDataURL('image/jpeg', 0.5);
+            const smallerBase64 = canvas.toDataURL('image/jpeg', 0.4);
             resolve(smallerBase64);
           } else {
             resolve(optimizedBase64);
@@ -93,9 +115,16 @@ export default function ProfilePanel() {
       reader.onerror = reject;
     });
   };
-  
-  // Récupérer le profil utilisateur
+
+  // ===== RÉCUPÉRATION DU PROFIL =====
   const fetchUserProfile = async () => {
+    const token = localStorage.getItem('token');
+    if (!token) {
+      setError('Vous devez être connecté');
+      setLoading(false);
+      return;
+    }
+
     setLoading(true);
     setError(null);
     
@@ -104,11 +133,14 @@ export default function ProfilePanel() {
         method: 'GET',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${localStorage.getItem('token')}`
+          'Authorization': `Bearer ${token}`
         }
       });
       
       if (!response.ok) {
+        if (response.status === 401) {
+          throw new Error('Session expirée, veuillez vous reconnecter');
+        }
         throw new Error('Erreur lors du chargement du profil');
       }
       
@@ -125,28 +157,35 @@ export default function ProfilePanel() {
         profile_image_url: userData.profile_image_url || ''
       });
       
-      // Mettre à jour le contexte si nécessaire
-      if (setConfig) {
+      if (setConfig && typeof setConfig === 'function') {
+        const fullName = `${userData.first_name || ''} ${userData.last_name || ''}`.trim();
         setConfig(prev => ({
           ...prev,
-          name: `${userData.first_name || ''} ${userData.last_name || ''}`.trim(),
-          init: `${(userData.first_name?.[0] || '')}${(userData.last_name?.[0] || '')}`.toUpperCase(),
+          name: fullName || prev?.name || 'Administrateur',
+          init: fullName ? `${(userData.first_name?.[0] || '')}${(userData.last_name?.[0] || '')}`.toUpperCase() : prev?.init || 'AD',
           role: userData.role || role,
-          ava: userData.profile_image_url ? `url(${userData.profile_image_url})` : prev.ava
+          ava: userData.profile_image_url ? `url(${userData.profile_image_url})` : prev?.ava || '#3b82f6'
         }));
       }
       
     } catch (err) {
-      console.error('Erreur:', err);
-      setError(err.message);
+      console.error('Erreur fetch profil:', err);
+      setError(err.message || 'Erreur lors du chargement du profil');
     } finally {
       setLoading(false);
     }
   };
-  
-  // Mettre à jour le profil
+
+  // ===== MISE À JOUR DU PROFIL =====
   const handleUpdateProfile = async (e) => {
     e.preventDefault();
+    
+    const token = localStorage.getItem('token');
+    if (!token) {
+      setError('Vous devez être connecté');
+      return;
+    }
+
     setSaving(true);
     setError(null);
     setSuccess(null);
@@ -156,7 +195,7 @@ export default function ProfilePanel() {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${localStorage.getItem('token')}`
+          'Authorization': `Bearer ${token}`
         },
         body: JSON.stringify({
           first_name: profile.first_name,
@@ -179,26 +218,29 @@ export default function ProfilePanel() {
       const data = await response.json();
       setSuccess('Profil mis à jour avec succès !');
       
-      // Recharger le profil
       await fetchUserProfile();
       
-      // Effacer le message après 3 secondes
       setTimeout(() => setSuccess(null), 3000);
       
     } catch (err) {
-      console.error('Erreur:', err);
-      setError(err.message);
+      console.error('Erreur update profil:', err);
+      setError(err.message || 'Erreur lors de la mise à jour');
     } finally {
       setSaving(false);
     }
   };
-  
-  // Upload de photo de profil avec optimisation
+
+  // ===== UPLOAD PHOTO DE PROFIL =====
   const handleProfileImageUpload = async (e) => {
     const file = e.target.files[0];
     if (!file) return;
     
-    // Vérifier le type
+    const token = localStorage.getItem('token');
+    if (!token) {
+      setError('Vous devez être connecté');
+      return;
+    }
+    
     if (!file.type.startsWith('image/')) {
       setError('Seules les images sont acceptées');
       return;
@@ -208,21 +250,18 @@ export default function ProfilePanel() {
     setError(null);
     
     try {
-      // Redimensionner et optimiser l'image
       const optimizedImage = await resizeAndOptimizeImage(file);
       
-      // Mettre à jour localement d'abord
       setProfile(prev => ({
         ...prev,
         profile_image_url: optimizedImage
       }));
       
-      // Sauvegarder via PUT /users/me
       const response = await fetch(`${API_BASE_URL}/users/me`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${localStorage.getItem('token')}`
+          'Authorization': `Bearer ${token}`
         },
         body: JSON.stringify({
           first_name: profile.first_name,
@@ -234,7 +273,7 @@ export default function ProfilePanel() {
       });
       
       if (response.status === 413) {
-        throw new Error('L\'image est trop volumineuse après optimisation. Veuillez choisir une image plus petite.');
+        throw new Error('L\'image est trop volumineuse après optimisation');
       }
       
       if (!response.ok) {
@@ -242,8 +281,7 @@ export default function ProfilePanel() {
         throw new Error(errorData.message || 'Erreur lors de l\'upload');
       }
       
-      // Mettre à jour le contexte
-      if (setConfig) {
+      if (setConfig && typeof setConfig === 'function') {
         setConfig(prev => ({
           ...prev,
           ava: `url(${optimizedImage})`
@@ -256,18 +294,22 @@ export default function ProfilePanel() {
     } catch (err) {
       console.error('Erreur upload image:', err);
       setError(`Upload échoué: ${err.message}`);
-      // Recharger le profil pour annuler les changements locaux
       await fetchUserProfile();
     } finally {
       setSaving(false);
-      // Reset file input
       e.target.value = '';
     }
   };
-  
-  // Changer le mot de passe
+
+  // ===== CHANGEMENT DE MOT DE PASSE =====
   const handleChangePassword = async (e) => {
     e.preventDefault();
+    
+    const token = localStorage.getItem('token');
+    if (!token) {
+      setPasswordError('Vous devez être connecté');
+      return;
+    }
     
     // Validation
     if (passwordData.newPassword !== passwordData.confirmPassword) {
@@ -290,11 +332,12 @@ export default function ProfilePanel() {
     setPasswordSuccess(null);
     
     try {
-      const response = await fetch(`${API_BASE_URL}/users/me/change-password`, {
+      // Tentative avec la route dédiée
+      let response = await fetch(`${API_BASE_URL}/users/me/change-password`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${localStorage.getItem('token')}`
+          'Authorization': `Bearer ${token}`
         },
         body: JSON.stringify({
           currentPassword: passwordData.currentPassword,
@@ -303,9 +346,26 @@ export default function ProfilePanel() {
         })
       });
       
+      // Fallback: Si la route n'existe pas, essayer avec PUT
+      if (response.status === 404) {
+        console.warn('Route de changement de mot de passe non trouvée, tentative avec PUT...');
+        response = await fetch(`${API_BASE_URL}/users/me`, {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`
+          },
+          body: JSON.stringify({
+            password: passwordData.newPassword,
+            currentPassword: passwordData.currentPassword
+          })
+        });
+      }
+      
+      const data = await response.json();
+      
       if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.message || 'Erreur lors du changement de mot de passe');
+        throw new Error(data.message || 'Erreur lors du changement de mot de passe');
       }
       
       setPasswordSuccess('Mot de passe changé avec succès !');
@@ -315,18 +375,17 @@ export default function ProfilePanel() {
         confirmPassword: ''
       });
       
-      // Effacer le message après 3 secondes
       setTimeout(() => setPasswordSuccess(null), 3000);
       
     } catch (err) {
-      console.error('Erreur:', err);
-      setPasswordError(err.message);
+      console.error('Erreur changement mot de passe:', err);
+      setPasswordError(err.message || 'Erreur lors du changement de mot de passe');
     } finally {
       setChangingPassword(false);
     }
   };
-  
-  // Gérer les changements des champs du profil
+
+  // ===== GESTIONNAIRES D'ÉVÉNEMENTS =====
   const handleProfileChange = (field, value) => {
     setProfile(prev => ({
       ...prev,
@@ -334,29 +393,32 @@ export default function ProfilePanel() {
     }));
   };
   
-  // Gérer les changements des champs de mot de passe
   const handlePasswordChange = (field, value) => {
     setPasswordData(prev => ({
       ...prev,
       [field]: value
     }));
   };
-  
-  // Chargement initial
+
+  // ===== EFFET DE CHARGEMENT =====
   useEffect(() => {
     fetchUserProfile();
   }, []);
-  
+
+  // ===== RENDU =====
   if (loading) {
     return (
       <div className="profile-wrap" style={{ maxWidth: 620 }}>
         <div className="card" style={{ padding: '40px', textAlign: 'center' }}>
-          <div style={{ color: 'var(--dim)' }}>Chargement du profil...</div>
+          <div style={{ color: 'var(--dim)' }}>
+            <FaSpinner className="spinner" style={{ marginRight: 8, animation: 'spin 1s linear infinite' }} />
+            Chargement du profil...
+          </div>
         </div>
       </div>
     );
   }
-  
+
   return (
     <div className="profile-wrap" style={{ maxWidth: 620 }}>
       {/* Messages de notification */}
@@ -368,9 +430,18 @@ export default function ProfilePanel() {
           border: '1px solid rgba(220,38,38,.3)', 
           borderRadius: 8,
           color: '#ef4444',
-          fontSize: 13
+          fontSize: 13,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between'
         }}>
-          ⚠️ {error}
+          <span><FaExclamationCircle style={{ marginRight: 8 }} /> {error}</span>
+          <button 
+            onClick={() => setError(null)}
+            style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#ef4444', fontSize: 16 }}
+          >
+            <FaTimesCircle />
+          </button>
         </div>
       )}
       
@@ -382,16 +453,25 @@ export default function ProfilePanel() {
           border: '1px solid rgba(34,197,94,.3)', 
           borderRadius: 8,
           color: '#22c55e',
-          fontSize: 13
+          fontSize: 13,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between'
         }}>
-          ✓ {success}
+          <span><FaCheckCircle style={{ marginRight: 8 }} /> {success}</span>
+          <button 
+            onClick={() => setSuccess(null)}
+            style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#22c55e', fontSize: 16 }}
+          >
+            <FaTimesCircle />
+          </button>
         </div>
       )}
       
       {/* Formulaire de profil */}
       <div className="card" style={{ marginBottom: 12 }}>
         <div className="card-header">
-          <span className="card-title">Mon profil</span>
+          <span className="card-title"><FaUser style={{ marginRight: 8 }} /> Mon profil</span>
         </div>
         <form onSubmit={handleUpdateProfile}>
           <div className="card-body" style={{ padding: '14px 18px' }}>
@@ -402,7 +482,9 @@ export default function ProfilePanel() {
                   width: 76, 
                   height: 76, 
                   borderRadius: 18, 
-                  background: profile.profile_image_url ? `url(${profile.profile_image_url}) center/cover` : (config.ava || '#3b82f6'),
+                  background: profile.profile_image_url 
+                    ? `url(${profile.profile_image_url}) center/cover` 
+                    : config?.ava || '#3b82f6',
                   display: 'flex', 
                   alignItems: 'center', 
                   justifyContent: 'center', 
@@ -412,13 +494,14 @@ export default function ProfilePanel() {
                   margin: '0 auto 14px', 
                   position: 'relative',
                   color: 'white',
-                  backgroundSize: 'cover'
+                  backgroundSize: 'cover',
+                  border: '2px solid rgba(255,255,255,0.1)'
                 }}
               >
-                {!profile.profile_image_url && (profile.first_name?.[0] || profile.last_name?.[0] || 'U')}
+                {!profile.profile_image_url && (profile.first_name?.[0] || profile.last_name?.[0] || <FaUser />)}
               </div>
               <label className="btn btn-sm" style={{ cursor: 'pointer', display: 'inline-block' }}>
-                Changer la photo
+                <FaCamera style={{ marginRight: 6 }} /> Changer la photo
                 <input 
                   type="file" 
                   accept="image/jpeg,image/png,image/gif,image/webp"
@@ -434,25 +517,27 @@ export default function ProfilePanel() {
             
             <div className="pform" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 14 }}>
               <div>
-                <label className="form-label">Prénom</label>
+                <label className="form-label"><FaUser style={{ marginRight: 4 }} /> Prénom</label>
                 <input 
                   className="form-input" 
                   value={profile.first_name}
                   onChange={(e) => handleProfileChange('first_name', e.target.value)}
                   disabled={saving}
+                  placeholder="Votre prénom"
                 />
               </div>
               <div>
-                <label className="form-label">Nom</label>
+                <label className="form-label"><FaUser style={{ marginRight: 4 }} /> Nom</label>
                 <input 
                   className="form-input" 
                   value={profile.last_name}
                   onChange={(e) => handleProfileChange('last_name', e.target.value)}
                   disabled={saving}
+                  placeholder="Votre nom"
                 />
               </div>
               <div className="pform-full" style={{ gridColumn: '1/-1' }}>
-                <label className="form-label">Email</label>
+                <label className="form-label"><FaEnvelope style={{ marginRight: 4 }} /> Email</label>
                 <input 
                   className="form-input" 
                   type="email"
@@ -460,14 +545,15 @@ export default function ProfilePanel() {
                   onChange={(e) => handleProfileChange('email', e.target.value)}
                   disabled={saving}
                   required
+                  placeholder="votre@email.com"
                 />
               </div>
               <div className="pform-full" style={{ gridColumn: '1/-1' }}>
-                <label className="form-label">Bio</label>
+                <label className="form-label"><FaPen style={{ marginRight: 4 }} /> Bio</label>
                 <textarea 
                   className="form-input" 
-                  rows="2" 
-                  style={{ resize: 'none' }}
+                  rows="3" 
+                  style={{ resize: 'vertical', minHeight: '60px' }}
                   value={profile.bio}
                   onChange={(e) => handleProfileChange('bio', e.target.value)}
                   disabled={saving}
@@ -475,31 +561,43 @@ export default function ProfilePanel() {
                 />
               </div>
               <div>
-                <label className="form-label">Rôle</label>
+                <label className="form-label"><FaUserTag style={{ marginRight: 4 }} /> Rôle</label>
                 <input 
                   className="form-input" 
-                  defaultValue={profile.role === 'developpeur' ? 'Développeur' : profile.role === 'graphiste' ? 'Graphiste' : 'Admin'}
+                  value={profile.role === 'developpeur' ? 'Développeur' : 
+                         profile.role === 'graphiste' ? 'Graphiste' : 
+                         profile.role === 'admin' ? 'Administrateur' : 
+                         profile.role || 'Utilisateur'}
                   readOnly 
-                  style={{ opacity: 0.6 }} 
+                  style={{ opacity: 0.7, cursor: 'not-allowed' }} 
                 />
               </div>
               <div>
-                <label className="form-label">Membre depuis</label>
+                <label className="form-label"><FaCalendarAlt style={{ marginRight: 4 }} /> Membre depuis</label>
                 <input 
                   className="form-input" 
-                  defaultValue={formatDate(profile.created_at)}
+                  value={formatDate(profile.created_at)}
                   readOnly 
-                  style={{ opacity: 0.6 }} 
+                  style={{ opacity: 0.7, cursor: 'not-allowed' }} 
                 />
               </div>
             </div>
             
-            <div style={{ display: 'flex', gap: 7, justifyContent: 'flex-end' }}>
-              <button type="button" className="btn" onClick={fetchUserProfile} disabled={saving}>
-                Annuler
+            <div style={{ display: 'flex', gap: 7, justifyContent: 'flex-end', borderTop: '1px solid var(--border)', paddingTop: 14 }}>
+              <button 
+                type="button" 
+                className="btn" 
+                onClick={fetchUserProfile} 
+                disabled={saving}
+              >
+                <FaUndo style={{ marginRight: 6 }} /> Annuler
               </button>
-              <button type="submit" className="btn btn-primary" disabled={saving}>
-                {saving ? 'Enregistrement...' : 'Sauvegarder'}
+              <button 
+                type="submit" 
+                className="btn btn-primary" 
+                disabled={saving}
+              >
+                {saving ? <><FaSpinner className="spinner" style={{ animation: 'spin 1s linear infinite', marginRight: 6 }} /> Enregistrement...</> : <><FaSave style={{ marginRight: 6 }} /> Sauvegarder</>}
               </button>
             </div>
           </div>
@@ -509,7 +607,7 @@ export default function ProfilePanel() {
       {/* Formulaire de changement de mot de passe */}
       <div className="card">
         <div className="card-header">
-          <span className="card-title">Sécurité</span>
+          <span className="card-title"><FaLock style={{ marginRight: 8 }} /> Sécurité</span>
         </div>
         <form onSubmit={handleChangePassword}>
           <div className="card-body" style={{ padding: '14px 18px' }}>
@@ -520,9 +618,18 @@ export default function ProfilePanel() {
                 background: 'rgba(220,38,38,.15)', 
                 borderRadius: 6,
                 color: '#ef4444',
-                fontSize: 12
+                fontSize: 13,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between'
               }}>
-                ⚠️ {passwordError}
+                <span><FaExclamationCircle style={{ marginRight: 8 }} /> {passwordError}</span>
+                <button 
+                  onClick={() => setPasswordError(null)}
+                  style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#ef4444', fontSize: 16 }}
+                >
+                  <FaTimesCircle />
+                </button>
               </div>
             )}
             
@@ -533,15 +640,24 @@ export default function ProfilePanel() {
                 background: 'rgba(34,197,94,.15)', 
                 borderRadius: 6,
                 color: '#22c55e',
-                fontSize: 12
+                fontSize: 13,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between'
               }}>
-                ✓ {passwordSuccess}
+                <span><FaCheckCircle style={{ marginRight: 8 }} /> {passwordSuccess}</span>
+                <button 
+                  onClick={() => setPasswordSuccess(null)}
+                  style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#22c55e', fontSize: 16 }}
+                >
+                  <FaTimesCircle />
+                </button>
               </div>
             )}
             
             <div className="pform" style={{ display: 'grid', gridTemplateColumns: '1fr', gap: 10 }}>
               <div>
-                <label className="form-label">Mot de passe actuel</label>
+                <label className="form-label"><FaKey style={{ marginRight: 4 }} /> Mot de passe actuel</label>
                 <input 
                   className="form-input" 
                   type="password" 
@@ -553,7 +669,7 @@ export default function ProfilePanel() {
                 />
               </div>
               <div>
-                <label className="form-label">Nouveau mot de passe</label>
+                <label className="form-label"><FaLock style={{ marginRight: 4 }} /> Nouveau mot de passe</label>
                 <input 
                   className="form-input" 
                   type="password" 
@@ -565,7 +681,7 @@ export default function ProfilePanel() {
                 />
               </div>
               <div>
-                <label className="form-label">Confirmer</label>
+                <label className="form-label"><FaCheckCircle style={{ marginRight: 4 }} /> Confirmer</label>
                 <input 
                   className="form-input" 
                   type="password" 
@@ -578,14 +694,29 @@ export default function ProfilePanel() {
               </div>
             </div>
             
-            <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 14 }}>
-              <button type="submit" className="btn btn-primary" disabled={changingPassword}>
-                {changingPassword ? 'Changement...' : 'Mettre à jour'}
+            <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 14, borderTop: '1px solid var(--border)', paddingTop: 14 }}>
+              <button 
+                type="submit" 
+                className="btn btn-primary" 
+                disabled={changingPassword}
+              >
+                {changingPassword ? <><FaSpinner className="spinner" style={{ animation: 'spin 1s linear infinite', marginRight: 6 }} /> Changement...</> : <><FaKey style={{ marginRight: 6 }} /> Mettre à jour</>}
               </button>
             </div>
           </div>
         </form>
       </div>
+
+      {/* Style pour l'animation de rotation */}
+      <style>{`
+        @keyframes spin {
+          from { transform: rotate(0deg); }
+          to { transform: rotate(360deg); }
+        }
+        .spinner {
+          display: inline-block;
+        }
+      `}</style>
     </div>
   );
 }

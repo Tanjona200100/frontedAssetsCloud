@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 
 // Configuration API
-const API_BASE_URL = process.env.REACT_APP_API_BASE_URL || process.env.REACT_APP_API_URL || 'http://192.168.2.73:5000/api';
+const API_BASE_URL = process.env.REACT_APP_API_BASE_URL ;
 
 export default function HistoryPanel() {
   const [history, setHistory] = useState([]);

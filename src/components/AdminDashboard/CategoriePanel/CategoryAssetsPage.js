@@ -6,7 +6,7 @@ import { PiCubeLight } from "react-icons/pi";
 import { FaRegFile } from "react-icons/fa6";
 import { RiDossierFill } from "react-icons/ri";
 import { MdWeb, MdPalette, MdPhoneAndroid, MdBuild, MdBarChart, MdSecurity, MdTrendingUp, MdMenuBook, MdSportsEsports, MdSmartToy, MdCloud, MdInventory, MdFolder } from 'react-icons/md';
-import ModelViewer from '../UserDashboard/ModelViewer';
+import ModelViewer from '../../UserDashboard/ModelViewer';
 
 const API_BASE_URL = process.env.REACT_APP_API_URL;
 
