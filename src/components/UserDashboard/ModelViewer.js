@@ -376,9 +376,32 @@ function sanitizeMaterial(material) {
   }
 
   try {
-    const textureProps = ['map', 'normalMap', 'roughnessMap', 'metalnessMap', 'emissiveMap', 'alphaMap', 'bumpMap', 'displacementMap', 'specularMap'];
-    
-    for (const prop of textureProps) {
+    // VÉRIFICATION CRITIQUE: S'assurer que le matériau a un type valide
+    if (!material.type || !material.isMaterial) {
+      return new THREE.MeshStandardMaterial({
+        color: 0xcccccc,
+        roughness: 0.5,
+        metalness: 0.1
+      });
+    }
+
+    // Liste des propriétés de texture valides selon le type de matériau
+    const validTextureProps = [];
+    if (material.isMeshStandardMaterial || material.type === 'MeshStandardMaterial') {
+      validTextureProps.push('map', 'normalMap', 'roughnessMap', 'metalnessMap', 'emissiveMap', 'alphaMap', 'bumpMap', 'displacementMap', 'aoMap', 'specularMap');
+    } else if (material.isMeshPhongMaterial || material.type === 'MeshPhongMaterial') {
+      validTextureProps.push('map', 'normalMap', 'specularMap', 'emissiveMap', 'alphaMap', 'bumpMap', 'displacementMap');
+    } else if (material.isMeshLambertMaterial || material.type === 'MeshLambertMaterial') {
+      validTextureProps.push('map', 'emissiveMap', 'alphaMap', 'bumpMap', 'displacementMap');
+    } else if (material.isMeshToonMaterial || material.type === 'MeshToonMaterial') {
+      validTextureProps.push('map', 'normalMap', 'emissiveMap', 'alphaMap');
+    } else {
+      // Pour tout autre type, utiliser les propriétés de base
+      validTextureProps.push('map', 'normalMap', 'emissiveMap', 'alphaMap');
+    }
+
+    // Nettoyer les textures invalides
+    for (const prop of validTextureProps) {
       if (material[prop]) {
         if (!material[prop].isTexture) {
           console.warn(`Texture ${prop} invalide, suppression`);
@@ -387,24 +410,35 @@ function sanitizeMaterial(material) {
         }
         
         if (material[prop].image && !material[prop].image.width) {
-          console.warn(`Texture ${prop} pas encore chargée, tentative de chargement...`);
+          console.warn(`Texture ${prop} pas encore chargée`);
         }
       }
     }
 
+    // S'assurer que les propriétés de couleur sont valides
     if (material.color && !material.color.isColor) {
       material.color = new THREE.Color(material.color);
     }
-
     if (material.emissive && !material.emissive.isColor) {
       material.emissive = new THREE.Color(material.emissive);
     }
+    if (material.specular && !material.specular.isColor) {
+      material.specular = new THREE.Color(material.specular);
+    }
 
+    // Valeurs par défaut
     if (material.opacity === undefined) material.opacity = 1;
     if (material.transparent === undefined) material.transparent = false;
     if (material.side === undefined) material.side = THREE.FrontSide;
-    if (material.roughness === undefined) material.roughness = 0.5;
-    if (material.metalness === undefined) material.metalness = 0.1;
+    
+    if (material.isMeshStandardMaterial || material.type === 'MeshStandardMaterial') {
+      if (material.roughness === undefined) material.roughness = 0.5;
+      if (material.metalness === undefined) material.metalness = 0.1;
+    }
+    
+    if (material.isMeshPhongMaterial || material.type === 'MeshPhongMaterial') {
+      if (material.shininess === undefined) material.shininess = 30;
+    }
 
     material.needsUpdate = true;
     return material;
@@ -581,13 +615,22 @@ async function applyZipTexturesToThree(model, virtualFS) {
   for (const { material, meshes } of materialEntries) {
     if (!material) continue;
 
-    const isPhong = material.type === 'MeshPhongMaterial';
     let targetMaterial = material;
+    let isStandard = false;
+    let isPhong = false;
+
+    // Déterminer le type de matériau
+    if (material.isMeshStandardMaterial || material.type === 'MeshStandardMaterial') {
+      isStandard = true;
+    } else if (material.isMeshPhongMaterial || material.type === 'MeshPhongMaterial') {
+      isPhong = true;
+    }
 
     console.log(`📦 ===== MATÉRIAU: ${material.name || 'sans nom'} (${material.type}) =====`);
     console.log(`  - meshes utilisant ce matériau: ${meshes.map(m => m.name || '(sans nom)').join(', ')}`);
 
-    if (isPhong) {
+    // Convertir Phong en Standard si nécessaire
+    if (isPhong && !isStandard) {
       console.log(`🔄 Conversion de MeshPhongMaterial en MeshStandardMaterial`);
 
       try {
@@ -601,25 +644,18 @@ async function applyZipTexturesToThree(model, virtualFS) {
         targetMaterial.side = material.side || THREE.FrontSide;
         targetMaterial.name = material.name || '';
 
-        if (material.specular && material.specular.isColor) {
-          const specularIntensity = material.specular.r;
-          targetMaterial.metalness = 0.0;
-          targetMaterial.roughness = Math.max(0.1, 1 - Math.min(specularIntensity * 0.8, 0.9));
-        }
+        // Conversion des propriétés Phong
         if (material.shininess !== undefined) {
           targetMaterial.roughness = Math.max(0.1, 1 - Math.min(material.shininess / 100, 0.9));
         }
-
-        if (material.map && material.map.isTexture) targetMaterial.map = material.map;
-        if (material.specularMap && material.specularMap.isTexture) targetMaterial.roughnessMap = material.specularMap;
-        if (material.bumpMap && material.bumpMap.isTexture) {
-          targetMaterial.normalMap = material.bumpMap;
-          if (material.bumpScale !== undefined) {
-            targetMaterial.normalScale = new THREE.Vector2(material.bumpScale, material.bumpScale);
-          }
+        if (material.specular && material.specular.isColor) {
+          const specularIntensity = material.specular.r;
+          targetMaterial.metalness = Math.min(specularIntensity * 0.8, 0.5);
         }
 
         targetMaterial = sanitizeMaterial(targetMaterial) || targetMaterial;
+        isStandard = true;
+        isPhong = false;
         
         console.log(`  ✅ Matériau converti en MeshStandardMaterial`);
       } catch (error) {
@@ -629,6 +665,33 @@ async function applyZipTexturesToThree(model, virtualFS) {
           roughness: 0.5,
           metalness: 0.1
         });
+        isStandard = true;
+        isPhong = false;
+      }
+    }
+
+    // Si ce n'est pas un Standard, on le convertit
+    if (!isStandard && !isPhong) {
+      console.log(`🔄 Conversion de ${material.type} en MeshStandardMaterial`);
+      try {
+        targetMaterial = new THREE.MeshStandardMaterial();
+        if (material.color) targetMaterial.color.copy(material.color);
+        if (material.emissive) targetMaterial.emissive.copy(material.emissive);
+        targetMaterial.opacity = material.opacity ?? 1;
+        targetMaterial.transparent = material.transparent || false;
+        targetMaterial.side = material.side || THREE.FrontSide;
+        targetMaterial.name = material.name || '';
+        targetMaterial.roughness = 0.5;
+        targetMaterial.metalness = 0.1;
+        isStandard = true;
+      } catch (error) {
+        console.warn('Erreur conversion:', error);
+        targetMaterial = new THREE.MeshStandardMaterial({
+          color: 0xcccccc,
+          roughness: 0.5,
+          metalness: 0.1
+        });
+        isStandard = true;
       }
     }
 
@@ -640,6 +703,7 @@ async function applyZipTexturesToThree(model, virtualFS) {
 
     console.log(`  - tokens de contexte: [${contextTokens.join(', ') || 'aucun'}]`);
 
+    // Résoudre l'assignation des textures en fonction du type de matériau
     const assignment = resolveTextureAssignment(
       availableTextures,
       contextTokens,
@@ -650,6 +714,18 @@ async function applyZipTexturesToThree(model, virtualFS) {
     const pendingMaps = {};
 
     for (const [prop, match] of Object.entries(assignment)) {
+      // VÉRIFICATION CRITIQUE: Le matériau supporte-t-il cette propriété ?
+      const supportsProp = isStandard || isPhong || 
+        (targetMaterial[prop] !== undefined && 
+         typeof targetMaterial[prop] !== 'function' &&
+         !prop.startsWith('_'));
+      
+      if (!supportsProp) {
+        console.log(`  ⏭️ ${prop} non supporté par ${targetMaterial.type}, ignoré`);
+        continue;
+      }
+
+      // Ne pas écraser une texture existante
       if (targetMaterial[prop] && targetMaterial[prop].isTexture) {
         console.log(`    ⏭️ ${prop} déjà défini, ignoré`);
         continue;
@@ -671,9 +747,15 @@ async function applyZipTexturesToThree(model, virtualFS) {
     }
 
     try {
+      // Appliquer les textures
       for (const [prop, texture] of Object.entries(pendingMaps)) {
         if (texture && texture.isTexture) {
-          targetMaterial[prop] = texture;
+          // Vérifier que la propriété existe sur le matériau
+          if (prop in targetMaterial) {
+            targetMaterial[prop] = texture;
+          } else {
+            console.warn(`  ⚠️ Propriété ${prop} inexistante sur ${targetMaterial.type}`);
+          }
         }
       }
       targetMaterial.needsUpdate = true;
@@ -681,6 +763,7 @@ async function applyZipTexturesToThree(model, virtualFS) {
       console.warn('Erreur lors de l\'application des textures:', error);
     }
 
+    // Assigner le matériau aux mailles
     try {
       if (meshes.length === 1) {
         meshes[0].material = targetMaterial;
@@ -702,7 +785,6 @@ async function applyZipTexturesToThree(model, virtualFS) {
   console.log(`✅ ${texturesLoaded} textures chargées au total`);
   return texturesLoaded;
 }
-
 // ============ CHARGEMENT DU MODÈLE AVEC VFS ============
 
 async function loadModelFromZip(zipFile, virtualFS, selectedFile) {

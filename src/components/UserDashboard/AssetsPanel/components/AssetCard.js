@@ -1,7 +1,22 @@
 // src/components/UserDashboard/components/AssetCard.jsx
 
 import React from 'react';
-import { LiaEyeSolid, LiaDownloadSolid, LiaTrashAltSolid, LiaEditSolid, LiaExpandSolid } from 'react-icons/lia';
+import { 
+  LiaEyeSolid, 
+  LiaDownloadSolid, 
+  LiaTrashAltSolid, 
+  LiaEditSolid, 
+  LiaExpandSolid,
+  LiaFolderOpenSolid,
+  LiaPlayCircleSolid,
+  LiaImageSolid,
+  LiaCubeSolid,
+  LiaFileArchiveSolid,
+  LiaFileSolid,
+  LiaLockSolid,
+  LiaGlobeSolid,
+  LiaTagSolid
+} from 'react-icons/lia';
 import { PiCubeLight } from 'react-icons/pi';
 import { FaRegFile } from 'react-icons/fa6';
 import { API_BASE_URL } from '../assets/constants';
@@ -121,7 +136,7 @@ export default function AssetCard({
               zIndex: 2,
               pointerEvents: 'none'
             }}>
-              🎬 VIDÉO
+              <LiaPlayCircleSolid size={10} /> VIDÉO
             </div>
             {isHovered && (
               <div style={{
@@ -138,7 +153,7 @@ export default function AssetCard({
                 zIndex: 2,
                 pointerEvents: 'none'
               }}>
-                ▶️ Lecture en cours
+                <LiaPlayCircleSolid size={10} style={{ marginRight: 4 }} /> Lecture en cours
               </div>
             )}
             <div style={{
@@ -180,7 +195,7 @@ export default function AssetCard({
               }}
             />
             <div className="image-fallback" style={{ display: 'none', textAlign: 'center' }}>
-              <div style={{ fontSize: 48, marginBottom: 4 }}>🖼️</div>
+              <LiaImageSolid size={48} style={{ marginBottom: 4 }} />
               <div style={{ fontSize: 11, color: '#3B82F6' }}>Image</div>
             </div>
             <div style={{
@@ -200,7 +215,7 @@ export default function AssetCard({
               zIndex: 2,
               pointerEvents: 'none'
             }}>
-              🖼️ IMAGE
+              <LiaImageSolid size={10} /> IMAGE
             </div>
             <div style={{
               position: 'absolute',
@@ -240,7 +255,7 @@ export default function AssetCard({
                 }}
               />
               <div className="default-3d-preview" style={{ display: 'none', textAlign: 'center' }}>
-                <div style={{ fontSize: 48, marginBottom: 4 }}><PiCubeLight /></div>
+                <PiCubeLight size={48} style={{ marginBottom: 4 }} />
                 <div style={{ fontSize: 11, color: '#3b82f6' }}>Modèle 3D</div>
               </div>
               {isHovered && (
@@ -257,13 +272,13 @@ export default function AssetCard({
                   whiteSpace: 'nowrap',
                   zIndex: 2
                 }}>
-                  ✨ Visualiser
+                  <LiaEyeSolid size={10} style={{ marginRight: 4 }} /> Visualiser
                 </div>
               )}
             </>
           ) : (
             <div style={{ textAlign: 'center' }}>
-              <div style={{ fontSize: 48, marginBottom: 4 }}><PiCubeLight /></div>
+              <PiCubeLight size={48} style={{ marginBottom: 4 }} />
               <div style={{ fontSize: 11, color: '#3b82f6' }}>
                 Modèle 3D
                 {asset.ext && (
@@ -285,7 +300,7 @@ export default function AssetCard({
                   color: '#10b981',
                   whiteSpace: 'nowrap'
                 }}>
-                  ✨ Visualiser
+                  <LiaEyeSolid size={10} style={{ marginRight: 4 }} /> Visualiser
                 </div>
               )}
             </div>
@@ -310,7 +325,7 @@ export default function AssetCard({
                 }}
               />
               <div className="default-zip-preview" style={{ display: 'none', textAlign: 'center' }}>
-                <div style={{ fontSize: 48, marginBottom: 4 }}>📦</div>
+                <LiaFileArchiveSolid size={48} style={{ marginBottom: 4 }} />
                 <div style={{ fontSize: 11, color: '#f59e0b' }}>Archive 3D</div>
               </div>
               <div style={{
@@ -329,7 +344,7 @@ export default function AssetCard({
                 gap: 4,
                 zIndex: 2
               }}>
-                📦 ZIP
+                <LiaFileArchiveSolid size={10} /> ZIP
               </div>
               {isHovered && (
                 <div style={{
@@ -345,13 +360,13 @@ export default function AssetCard({
                   whiteSpace: 'nowrap',
                   zIndex: 2
                 }}>
-                  📂 Explorer
+                  <LiaFolderOpenSolid size={10} style={{ marginRight: 4 }} /> Explorer
                 </div>
               )}
             </>
           ) : (
             <div style={{ textAlign: 'center' }}>
-              <div style={{ fontSize: 48, marginBottom: 4 }}>📦</div>
+              <LiaFileArchiveSolid size={48} style={{ marginBottom: 4 }} />
               <div style={{ fontSize: 11, color: '#f59e0b' }}>Archive 3D</div>
               {isHovered && (
                 <div style={{
@@ -367,7 +382,7 @@ export default function AssetCard({
                   whiteSpace: 'nowrap',
                   zIndex: 2
                 }}>
-                  📂 Explorer
+                  <LiaFolderOpenSolid size={10} style={{ marginRight: 4 }} /> Explorer
                 </div>
               )}
             </div>
@@ -388,7 +403,7 @@ export default function AssetCard({
             />
           ) : (
             <div style={{ textAlign: 'center' }}>
-              <div style={{ fontSize: 48, marginBottom: 4 }}>🖼️</div>
+              <LiaImageSolid size={48} style={{ marginBottom: 4 }} />
               <div style={{ fontSize: 11, color: '#3B82F6' }}>Texture</div>
             </div>
           )
@@ -396,7 +411,7 @@ export default function AssetCard({
 
         {isMaterial && !isVideo && !isImage && !is3D && !isZIP && (
           <div style={{ textAlign: 'center' }}>
-            <div style={{ fontSize: 48, marginBottom: 4 }}>📄</div>
+            <LiaFileSolid size={48} style={{ marginBottom: 4 }} />
             <div style={{ fontSize: 11, color: '#8B5CF6' }}>Matériau</div>
           </div>
         )}
@@ -414,7 +429,7 @@ export default function AssetCard({
               }}
             />
           ) : (
-            <div style={{ fontSize: 48, opacity: 0.5 }}><FaRegFile /></div>
+            <FaRegFile size={48} opacity={0.5} />
           )
         )}
       </div>
@@ -447,9 +462,13 @@ export default function AssetCard({
             background: asset.visibility === 'public' ? 'rgba(16,185,129,.15)' : 'rgba(239,68,68,.15)',
             color: asset.visibility === 'public' ? '#10B981' : '#EF4444',
             padding: '1px 6px',
-            borderRadius: 8
+            borderRadius: 8,
+            display: 'flex',
+            alignItems: 'center',
+            gap: 3
           }}>
-            {asset.visibility === 'public' ? '🌍 Public' : '🔒 Privé'}
+            {asset.visibility === 'public' ? <LiaGlobeSolid size={8} /> : <LiaLockSolid size={8} />}
+            {asset.visibility === 'public' ? 'Public' : 'Privé'}
           </span>
           {isZIP && (
             <span style={{
@@ -457,9 +476,12 @@ export default function AssetCard({
               background: 'rgba(245,158,11,.15)',
               color: '#f59e0b',
               padding: '1px 6px',
-              borderRadius: 8
+              borderRadius: 8,
+              display: 'flex',
+              alignItems: 'center',
+              gap: 3
             }}>
-              📦 ZIP
+              <LiaFileArchiveSolid size={8} /> ZIP
             </span>
           )}
           {is3D && !isZIP && (
@@ -468,9 +490,12 @@ export default function AssetCard({
               background: 'rgba(16,185,129,.15)',
               color: '#10b981',
               padding: '1px 6px',
-              borderRadius: 8
+              borderRadius: 8,
+              display: 'flex',
+              alignItems: 'center',
+              gap: 3
             }}>
-              🎮 3D
+              <LiaCubeSolid size={8} /> 3D
             </span>
           )}
           {isVideo && (
@@ -479,9 +504,12 @@ export default function AssetCard({
               background: 'rgba(139,92,246,.15)',
               color: '#8B5CF6',
               padding: '1px 6px',
-              borderRadius: 8
+              borderRadius: 8,
+              display: 'flex',
+              alignItems: 'center',
+              gap: 3
             }}>
-              🎬 Vidéo
+              <LiaPlayCircleSolid size={8} /> Vidéo
             </span>
           )}
           {isImage && !isTexture && (
@@ -490,9 +518,12 @@ export default function AssetCard({
               background: 'rgba(59,130,246,.15)',
               color: '#3B82F6',
               padding: '1px 6px',
-              borderRadius: 8
+              borderRadius: 8,
+              display: 'flex',
+              alignItems: 'center',
+              gap: 3
             }}>
-              🖼️ Image
+              <LiaImageSolid size={8} /> Image
             </span>
           )}
         </div>
@@ -533,7 +564,6 @@ export default function AssetCard({
             }}
           >
             <LiaEyeSolid size={12} />
-            {isZIP ? '📂' : isVideo ? '▶️' : isImage ? '👁️' : 'Voir'}
           </button>
           <button
             onClick={() => onDownload(asset)}
