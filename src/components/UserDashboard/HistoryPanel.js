@@ -71,7 +71,8 @@ export default function HistoryPanel() {
       size: asset.file_size || asset.size || 0,
       action: 'upload',
       date: asset.created_at || asset.date || new Date(Date.now() - index * 86400000).toISOString(),
-      asset_id: asset.id
+      asset_id: asset.id,
+      visibility: asset.visibility || 'public'
     }));
     
     // Ajouter quelques actions supplémentaires pour varier l'affichage
@@ -85,7 +86,8 @@ export default function HistoryPanel() {
       size: asset.file_size || asset.size || 0,
       action: 'download',
       date: new Date(new Date(asset.created_at || Date.now()).getTime() + i * 3600000).toISOString(),
-      asset_id: asset.id
+      asset_id: asset.id,
+      visibility: asset.visibility || 'public'
     }));
     
     // Trier par date (plus récent d'abord)
@@ -118,13 +120,13 @@ export default function HistoryPanel() {
       }
       
       // Pagination
-      const start = (page - 1) * 20;
-      const end = start + 20;
+      const start = (page - 1) * 10;
+      const end = start + 10;
       const paginatedHistory = allHistory.slice(start, end);
       
       setHistory(paginatedHistory);
       setTotalItems(allHistory.length);
-      setTotalPages(Math.max(1, Math.ceil(allHistory.length / 20)));
+      setTotalPages(Math.max(1, Math.ceil(allHistory.length / 10)));
       
     } catch (err) {
       console.error('Erreur:', err);
@@ -138,48 +140,64 @@ export default function HistoryPanel() {
   }, [page, filter, fetchAssets, generateHistoryFromAssets]);
 
   // Formater la date
-  const formatDate = (date) => {
-    if (!date) return 'Date inconnue';
-    const d = new Date(date);
-    const now = new Date();
-    const diff = now - d;
-    const days = Math.floor(diff / (1000 * 60 * 60 * 24));
-    const hours = Math.floor(diff / (1000 * 60 * 60));
-    const minutes = Math.floor(diff / (1000 * 60));
+  const formatDate = (dateString) => {
+    if (!dateString) return 'Date inconnue';
+    const date = new Date(dateString);
+    const today = new Date();
+    const yesterday = new Date(today);
+    yesterday.setDate(yesterday.getDate() - 1);
     
-    if (minutes < 1) return `À l'instant`;
-    if (minutes < 60) return `Il y a ${minutes} minute${minutes > 1 ? 's' : ''}`;
-    if (hours < 24) return `Il y a ${hours} heure${hours > 1 ? 's' : ''}`;
-    if (days === 1) return `Hier`;
-    if (days < 7) return `Il y a ${days} jours`;
-    return d.toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', year: 'numeric' });
+    if (date.toDateString() === today.toDateString()) return "Auj.";
+    if (date.toDateString() === yesterday.toDateString()) return "Hier";
+    return `${date.getDate()} ${date.toLocaleString('fr', { month: 'short' })}`;
   };
 
   // Formater la taille
-  const formatSize = (bytes) => {
-    if (!bytes && bytes !== 0) return '0 MB';
-    if (typeof bytes === 'string') return bytes;
-    if (bytes === 0) return '0 MB';
-    
-    const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB'];
+  const formatFileSize = (bytes) => {
+    if (!bytes || bytes === 0) return '0 B';
+    const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
     const i = Math.floor(Math.log(bytes) / Math.log(1024));
-    const formattedSize = (bytes / Math.pow(1024, i)).toFixed(1);
-    
-    return `${formattedSize} ${sizes[i]}`;
+    return parseFloat((bytes / Math.pow(1024, i)).toFixed(1)) + ' ' + sizes[i];
   };
 
-  // Obtenir l'icône du fichier
-  const getFileIcon = (ext) => {
-    const icons = {
-      ZIP: '📦', RAR: '📦', '7Z': '📦',
-      PNG: '🖼️', JPG: '🖼️', JPEG: '🖼️', GIF: '🖼️', WEBP: '🖼️',
-      MP4: '🎬', MOV: '🎬', AVI: '🎬', MKV: '🎬',
-      GLB: '🎨', GLTF: '🎨', FBX: '🎨', OBJ: '🎨',
-      PSD: '🎯', AI: '🎯',
-      JSON: '📋', PDF: '📄', DOC: '📄', DOCX: '📄',
-      JS: '⚡', TS: '⚡', PY: '🐍', HTML: '🌐', CSS: '🎨'
-    };
-    return icons[ext?.toUpperCase()] || '📄';
+  // Obtenir l'extension en majuscules
+  const getFileExt = (fileName) => {
+    return fileName?.split('.').pop()?.toUpperCase() || 'FILE';
+  };
+
+  // Obtenir l'icône du fichier (comme dans DashboardPanel)
+  const getFileIcon = (fileType, fileName) => {
+    const ext = fileName?.split('.').pop()?.toLowerCase() || '';
+    
+    if (fileType === 'image' || ext === 'png' || ext === 'jpg' || ext === 'jpeg' || ext === 'webp') return 'img';
+    if (fileType === 'video' || ext === 'mp4' || ext === 'webm' || ext === 'mov') return 'vid';
+    if (fileType === '3d_model' || ext === 'glb' || ext === 'obj' || ext === 'fbx' || ext === 'stl') return '3d';
+    if (ext === 'psd') return 'psd';
+    if (ext === 'ai') return 'ai';
+    if (ext === 'zip' || ext === 'rar' || ext === '7z') return 'zip';
+    if (ext === 'json') return 'json';
+    return 'file';
+  };
+
+  // Détection des types de fichiers
+  const isZipFile = (item) => {
+    const ext = item.ext?.toLowerCase() || '';
+    return ext === 'zip' || ext === 'rar' || ext === '7z';
+  };
+
+  const is3DModel = (item) => {
+    const ext = item.ext?.toLowerCase() || '';
+    return ['glb', 'gltf', 'fbx', 'obj', 'stl', 'dae', '3ds', 'ply'].includes(ext);
+  };
+
+  const isVideoFile = (item) => {
+    const ext = item.ext?.toLowerCase() || '';
+    return ['mp4', 'webm', 'mov', 'avi', 'mkv'].includes(ext);
+  };
+
+  const isImageFile = (item) => {
+    const ext = item.ext?.toLowerCase() || '';
+    return ['jpg', 'jpeg', 'png', 'webp', 'gif', 'bmp', 'tiff'].includes(ext);
   };
 
   const handlePageChange = (newPage) => {
@@ -198,20 +216,16 @@ export default function HistoryPanel() {
 
   if (loading && history.length === 0) {
     return (
-      <div className="tbl-wrap" style={{ background: 'rgba(12,22,40,.8)', border: '1px solid rgba(255,255,255,.06)', borderRadius: 12, overflow: 'hidden', padding: '40px', textAlign: 'center' }}>
-        <div style={{ color: 'var(--dim)' }}>Chargement de l'historique...</div>
+      <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '400px' }}>
+        <div style={{ color: 'var(--text-muted)' }}>Chargement de l'historique...</div>
       </div>
     );
   }
 
   return (
-    <div className="tbl-wrap" style={{ background: 'rgba(12,22,40,.8)', border: '1px solid rgba(255,255,255,.06)', borderRadius: 12, overflow: 'hidden' }}>
-      <div className="tbl-top" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 18px', flexWrap: 'wrap', gap: 12 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-          <span className="card-title">Historique des activités</span>
-          <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10, color: 'var(--dim)' }}>{totalItems} événements</span>
-        </div>
-        
+    <div className="card" style={{ marginTop: '16px' }}>
+      <div className="card-header">
+        <span className="card-title">Historique des activités ({totalItems})</span>
         <div style={{ display: 'flex', gap: 8 }}>
           <select 
             value={filter}
@@ -219,7 +233,14 @@ export default function HistoryPanel() {
               setFilter(e.target.value);
               setPage(1);
             }}
-            style={{ background: 'rgba(0,0,0,.3)', border: '1px solid rgba(255,255,255,.1)', borderRadius: 6, padding: '4px 8px', color: 'white', fontSize: 12 }}
+            style={{ 
+              background: 'rgba(0,0,0,.3)', 
+              border: '1px solid rgba(255,255,255,.1)', 
+              borderRadius: 6, 
+              padding: '4px 8px', 
+              color: 'white', 
+              fontSize: 12 
+            }}
           >
             <option value="all">Toutes les actions</option>
             <option value="upload">Uploads</option>
@@ -232,126 +253,328 @@ export default function HistoryPanel() {
           <button 
             onClick={refreshHistory}
             className="btn btn-sm"
-            style={{ background: 'rgba(255,255,255,.05)', border: '1px solid rgba(255,255,255,.1)', borderRadius: 6, padding: '4px 8px', cursor: 'pointer', color: 'var(--muted)' }}
+            style={{ 
+              background: 'rgba(255,255,255,.05)', 
+              border: '1px solid rgba(255,255,255,.1)', 
+              borderRadius: 6, 
+              padding: '4px 8px', 
+              cursor: 'pointer', 
+              color: 'var(--muted)' 
+            }}
             title="Rafraîchir"
           >
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="12" height="12">
-              <path d="M23 4v6h-6M1 20v-6h6" />
-              <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
-            </svg>
+            🔄
           </button>
         </div>
       </div>
-      
+
       {error && (
-        <div style={{ padding: '12px 18px', background: 'rgba(220,38,38,.15)', color: '#ef4444', fontSize: 12, borderBottom: '1px solid rgba(220,38,38,.3)' }}>
-          ⚠️ {error}
+        <div style={{ padding: '12px', fontSize: '12px', color: '#F87171', background: 'rgba(239,68,68,0.1)', borderRadius: '8px', margin: '12px' }}>
+          {error}
         </div>
       )}
-      
-      {history.length > 0 ? (
-        <>
-          {history.map((item) => (
-            <div 
-              key={item.id} 
-              className="hist-item" 
-              style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 18px', borderBottom: '1px solid rgba(255,255,255,.025)', transition: 'background 0.2s' }}
-              onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(255,255,255,.02)'}
-              onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+
+      <table className="data-table">
+        <thead>
+          <tr>
+            <th>Fichier</th>
+            <th>Taille</th>
+            <th>Date</th>
+            <th>Action</th>
+          </tr>
+        </thead>
+        <tbody>
+          {history.length === 0 ? (
+            <tr>
+              <td colSpan="4" style={{ textAlign: 'center', padding: '40px', color: 'var(--text-muted)' }}>
+                <div style={{ fontSize: 48, marginBottom: 16 }}>📋</div>
+                <div>Aucun événement trouvé</div>
+                <div style={{ fontSize: 12, marginTop: 8 }}>Commencez à uploader des fichiers pour voir l'historique</div>
+              </td>
+            </tr>
+          ) : (
+            history.map((item) => {
+              const ext = getFileExt(item.name);
+              const icon = getFileIcon(item.action, item.name);
+              const isZIP = isZipFile(item);
+              const is3D = is3DModel(item);
+              const isVideo = isVideoFile(item);
+              const isImage = isImageFile(item);
+
+              return (
+                <tr key={item.id}>
+                  <td>
+                    <div className="file-cell">
+                      <div className={`file-icon ${icon}`}>{ext}</div>
+                      <div>
+                        <div className="fn" style={{ fontWeight: 500 }}>{item.name}</div>
+                        <div className="fm" style={{ fontSize: 10, color: 'var(--muted)' }}>
+                          {isZIP ? '📦 Archive ZIP' : 
+                           is3D ? '🎨 Modèle 3D' : 
+                           isVideo ? '🎬 Vidéo' : 
+                           isImage ? '🖼️ Image' : 
+                           (item.ext || 'Fichier')}
+                        </div>
+                      </div>
+                    </div>
+                  </td>
+                  <td style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 11, color: 'var(--muted)' }}>
+                    {formatFileSize(item.size)}
+                  </td>
+                  <td style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 11, color: 'var(--dim)' }}>
+                    {formatDate(item.date)}
+                  </td>
+                  <td>
+                    <span style={{ 
+                      fontSize: 10,
+                      padding: '2px 8px',
+                      borderRadius: 10,
+                      background: `${actionColors[item.action] || 'var(--dim)'}15`,
+                      color: actionColors[item.action] || 'var(--dim)'
+                    }}>
+                      {actionLabels[item.action] || item.action}
+                    </span>
+                  </td>
+                </tr>
+              );
+            })
+          )}
+        </tbody>
+      </table>
+
+      {/* Pagination - style identique au DashboardPanel */}
+      {totalItems > 10 && (
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          padding: '14px 20px',
+          borderTop: '1px solid rgba(255,255,255,0.06)',
+          flexWrap: 'wrap',
+          gap: 12,
+          background: 'rgba(0,0,0,0.15)',
+          borderRadius: '0 0 12px 12px'
+        }}>
+          <div style={{
+            fontFamily: "'JetBrains Mono', monospace",
+            fontSize: 12,
+            color: 'rgba(255,255,255,0.5)',
+            display: 'flex',
+            alignItems: 'center',
+            gap: 8
+          }}>
+            <span style={{
+              background: 'rgba(255,255,255,0.05)',
+              padding: '4px 12px',
+              borderRadius: 4,
+              fontSize: 11
+            }}>
+              {totalItems > 0 ? 
+                `${(page - 1) * 10 + 1}–${Math.min(page * 10, totalItems)}` : 
+                '0'}
+            </span>
+            <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.3)' }}>
+              sur {totalItems}
+            </span>
+          </div>
+
+          <div style={{ 
+            display: 'flex', 
+            gap: 6, 
+            alignItems: 'center',
+            background: 'rgba(255,255,255,0.03)',
+            padding: '4px',
+            borderRadius: 8,
+            border: '1px solid rgba(255,255,255,0.04)'
+          }}>
+            <button
+              onClick={() => handlePageChange(page - 1)}
+              disabled={page === 1}
+              style={{
+                width: 34,
+                height: 34,
+                borderRadius: 6,
+                border: 'none',
+                background: page === 1 ? 'rgba(255,255,255,0.03)' : 'rgba(255,255,255,0.06)',
+                color: page === 1 ? 'rgba(255,255,255,0.2)' : 'rgba(255,255,255,0.6)',
+                cursor: page === 1 ? 'not-allowed' : 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                transition: 'all 0.2s ease',
+                fontSize: 14,
+                fontFamily: "'JetBrains Mono', monospace"
+              }}
+              onMouseEnter={(e) => {
+                if (page !== 1) {
+                  e.currentTarget.style.background = 'rgba(255,255,255,0.12)';
+                  e.currentTarget.style.color = 'rgba(255,255,255,0.9)';
+                }
+              }}
+              onMouseLeave={(e) => {
+                if (page !== 1) {
+                  e.currentTarget.style.background = 'rgba(255,255,255,0.06)';
+                  e.currentTarget.style.color = 'rgba(255,255,255,0.6)';
+                }
+              }}
             >
-              <div style={{ width: 36, height: 36, background: 'rgba(255,255,255,.05)', borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16 }}>
-                {getFileIcon(item.ext)}
-              </div>
-              
-              <div style={{ flex: 1 }}>
-                <div className="fn" style={{ fontWeight: 500, fontSize: 13, color: 'white', marginBottom: 2 }}>
-                  {item.name}
-                </div>
-                <div className="fm" style={{ fontSize: 10, color: 'var(--muted)' }}>
-                  {formatSize(item.size)} • {item.ext || 'Fichier'}
-                </div>
-              </div>
-              
-              <span style={{ 
-                fontFamily: "'JetBrains Mono', monospace", 
-                fontSize: 11, 
-                fontWeight: 600, 
-                color: actionColors[item.action] || 'var(--dim)',
-                padding: '4px 8px',
-                borderRadius: 4,
-                background: `${actionColors[item.action] || 'var(--dim)'}15`
-              }}>
-                {actionLabels[item.action] || item.action}
-              </span>
-              
-              <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10, color: 'var(--dim)' }}>
-                {formatDate(item.date)}
-              </span>
-            </div>
-          ))}
-          
-          {totalPages > 1 && (
-            <div className="pag" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 18px', borderTop: '1px solid var(--b2)' }}>
-              <span className="pag-i" style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10, color: 'var(--dim)' }}>
-                {((page - 1) * 20) + 1}–{Math.min(page * 20, totalItems)} / {totalItems}
-              </span>
-              <div className="pag-btns" style={{ display: 'flex', gap: 3 }}>
-                <button 
-                  className="pb" 
-                  onClick={() => handlePageChange(page - 1)}
-                  disabled={page === 1}
-                  style={{ width: 27, height: 27, borderRadius: 5, border: '1px solid rgba(255,255,255,.06)', background: 'transparent', cursor: page === 1 ? 'not-allowed' : 'pointer', opacity: page === 1 ? 0.5 : 1, color: 'white' }}
-                >
-                  ‹
-                </button>
-                
-                {[...Array(Math.min(5, totalPages))].map((_, i) => {
-                  let pageNum;
-                  if (totalPages <= 5) pageNum = i + 1;
-                  else if (page <= 3) pageNum = i + 1;
-                  else if (page >= totalPages - 2) pageNum = totalPages - 4 + i;
-                  else pageNum = page - 2 + i;
-                  
-                  if (pageNum > totalPages) return null;
-                  
+              ‹
+            </button>
+
+            {Array.from({ length: totalPages }, (_, i) => i + 1).map((pageNum) => {
+              const isNearCurrent = Math.abs(pageNum - page) <= 2;
+              const isFirstOrLast = pageNum === 1 || pageNum === totalPages;
+              const showPage = isNearCurrent || isFirstOrLast;
+
+              if (!showPage) {
+                if (pageNum === page - 3 || pageNum === page + 3) {
                   return (
-                    <button 
-                      key={i}
-                      className={`pb ${pageNum === page ? 'on' : ''}`}
-                      onClick={() => handlePageChange(pageNum)}
-                      style={{ 
-                        width: 27, 
-                        height: 27, 
-                        borderRadius: 5, 
-                        border: '1px solid rgba(255,255,255,.06)', 
-                        background: pageNum === page ? 'rgba(59,130,246,.15)' : 'transparent',
-                        borderColor: pageNum === page ? 'rgba(59,130,246,.4)' : undefined,
-                        color: pageNum === page ? 'var(--blue)' : 'white',
-                        cursor: 'pointer'
+                    <span
+                      key={`dots-${pageNum}`}
+                      style={{
+                        width: 34,
+                        height: 34,
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        color: 'rgba(255,255,255,0.2)',
+                        fontSize: 12,
+                        fontFamily: "'JetBrains Mono', monospace"
                       }}
                     >
-                      {pageNum}
-                    </button>
+                      …
+                    </span>
                   );
-                })}
-                
-                <button 
-                  className="pb" 
-                  onClick={() => handlePageChange(page + 1)}
-                  disabled={page === totalPages}
-                  style={{ width: 27, height: 27, borderRadius: 5, border: '1px solid rgba(255,255,255,.06)', background: 'transparent', cursor: page === totalPages ? 'not-allowed' : 'pointer', opacity: page === totalPages ? 0.5 : 1, color: 'white' }}
+                }
+                return null;
+              }
+
+              const isActive = pageNum === page;
+
+              return (
+                <button
+                  key={pageNum}
+                  onClick={() => handlePageChange(pageNum)}
+                  style={{
+                    width: 34,
+                    height: 34,
+                    borderRadius: 6,
+                    border: 'none',
+                    background: isActive ? 'rgba(59,130,246,0.25)' : 'rgba(255,255,255,0.04)',
+                    color: isActive ? '#3B82F6' : 'rgba(255,255,255,0.6)',
+                    cursor: 'pointer',
+                    fontSize: 13,
+                    fontWeight: isActive ? 600 : 400,
+                    fontFamily: "'JetBrains Mono', monospace",
+                    transition: 'all 0.2s ease',
+                    boxShadow: isActive ? '0 0 20px rgba(59,130,246,0.15)' : 'none'
+                  }}
+                  onMouseEnter={(e) => {
+                    if (!isActive) {
+                      e.currentTarget.style.background = 'rgba(255,255,255,0.1)';
+                      e.currentTarget.style.color = 'rgba(255,255,255,0.9)';
+                    }
+                  }}
+                  onMouseLeave={(e) => {
+                    if (!isActive) {
+                      e.currentTarget.style.background = 'rgba(255,255,255,0.04)';
+                      e.currentTarget.style.color = 'rgba(255,255,255,0.6)';
+                    }
+                  }}
                 >
-                  ›
+                  {pageNum}
                 </button>
-              </div>
-            </div>
-          )}
-        </>
-      ) : (
-        <div style={{ padding: '60px 40px', textAlign: 'center', color: 'var(--dim)' }}>
-          <div style={{ fontSize: 48, marginBottom: 16 }}>📋</div>
-          <div>Aucun événement trouvé</div>
-          <div style={{ fontSize: 12, marginTop: 8 }}>Commencez à uploader des fichiers pour voir l'historique</div>
+              );
+            })}
+
+            <button
+              onClick={() => handlePageChange(page + 1)}
+              disabled={page === totalPages}
+              style={{
+                width: 34,
+                height: 34,
+                borderRadius: 6,
+                border: 'none',
+                background: page === totalPages ? 'rgba(255,255,255,0.03)' : 'rgba(255,255,255,0.06)',
+                color: page === totalPages ? 'rgba(255,255,255,0.2)' : 'rgba(255,255,255,0.6)',
+                cursor: page === totalPages ? 'not-allowed' : 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                transition: 'all 0.2s ease',
+                fontSize: 14,
+                fontFamily: "'JetBrains Mono', monospace"
+              }}
+              onMouseEnter={(e) => {
+                if (page !== totalPages) {
+                  e.currentTarget.style.background = 'rgba(255,255,255,0.12)';
+                  e.currentTarget.style.color = 'rgba(255,255,255,0.9)';
+                }
+              }}
+              onMouseLeave={(e) => {
+                if (page !== totalPages) {
+                  e.currentTarget.style.background = 'rgba(255,255,255,0.06)';
+                  e.currentTarget.style.color = 'rgba(255,255,255,0.6)';
+                }
+              }}
+            >
+              ›
+            </button>
+          </div>
+
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 8
+          }}>
+            <span style={{
+              fontSize: 11,
+              color: 'rgba(255,255,255,0.3)',
+              fontFamily: "'JetBrains Mono', monospace"
+            }}>
+              Aller à
+            </span>
+            <input
+              type="number"
+              min={1}
+              max={totalPages}
+              value={page}
+              onChange={(e) => {
+                const val = parseInt(e.target.value);
+                if (val >= 1 && val <= totalPages) {
+                  handlePageChange(val);
+                }
+              }}
+              style={{
+                width: 44,
+                padding: '4px 6px',
+                background: 'rgba(255,255,255,0.05)',
+                border: '1px solid rgba(255,255,255,0.08)',
+                borderRadius: 4,
+                color: 'rgba(255,255,255,0.7)',
+                fontSize: 12,
+                fontFamily: "'JetBrains Mono', monospace",
+                textAlign: 'center',
+                outline: 'none',
+                transition: 'all 0.2s ease'
+              }}
+              onFocus={(e) => {
+                e.target.style.borderColor = 'rgba(59,130,246,0.4)';
+                e.target.style.background = 'rgba(59,130,246,0.05)';
+              }}
+              onBlur={(e) => {
+                e.target.style.borderColor = 'rgba(255,255,255,0.08)';
+                e.target.style.background = 'rgba(255,255,255,0.05)';
+              }}
+            />
+            <span style={{
+              fontSize: 11,
+              color: 'rgba(255,255,255,0.3)',
+              fontFamily: "'JetBrains Mono', monospace"
+            }}>
+              / {totalPages}
+            </span>
+          </div>
         </div>
       )}
     </div>

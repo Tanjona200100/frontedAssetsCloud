@@ -53,7 +53,6 @@ export default function Sidebar({ activePanel, setActivePanel }) {
   const [badgeRole, setBadgeRole] = useState('USER');
   const [profileImageUrl, setProfileImageUrl] = useState(null);
   const [userAccent, setUserAccent] = useState('#3B82F6');
-  const [storageText, setStorageText] = useState('18.4 / 50 GB');
   const [storagePercent, setStoragePercent] = useState(37);
   
   // Références
@@ -182,7 +181,6 @@ export default function Sidebar({ activePanel, setActivePanel }) {
         if (roleFromContext === 'graphiste') accent = '#EC4899';
         setUserAccent(accent);
         
-        setStorageText('18.4 / 50 GB');
         setStoragePercent(37);
         
         setProfileImageUrl(imageUrl);
@@ -351,17 +349,6 @@ export default function Sidebar({ activePanel, setActivePanel }) {
           ))}
         </div>
 
-        {!isAdminRoute && currentRole !== 'admin' && (
-          <div className="sb-storage" style={{ margin: '16px 20px', padding: '12px 0', borderTop: '1px solid rgba(255,255,255,0.06)', borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
-            <div className="st-header">
-              <span className="st-label">Stockage</span>
-              <span className="st-val">{storageText}</span>
-            </div>
-            <div className="st-track">
-              <div className="st-fill" style={{ width: `${storagePercent}%`, background: userAccent }} />
-            </div>
-          </div>
-        )}
 
         <div className="sb-footer">
           <div 

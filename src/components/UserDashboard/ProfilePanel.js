@@ -301,89 +301,73 @@ export default function ProfilePanel({ searchQuery }) {
     }
   };
 
-  // ===== CHANGEMENT DE MOT DE PASSE =====
-  const handleChangePassword = async (e) => {
-    e.preventDefault();
+// Dans ProfilePanel.jsx - La fonction handleChangePassword corrigée
+const handleChangePassword = async (e) => {
+  e.preventDefault();
+  
+  const token = localStorage.getItem('token');
+  if (!token) {
+    setPasswordError('Vous devez être connecté');
+    return;
+  }
+  
+  // Validation
+  if (passwordData.newPassword !== passwordData.confirmPassword) {
+    setPasswordError('Les mots de passe ne correspondent pas');
+    return;
+  }
+  
+  if (passwordData.newPassword.length < 6) {
+    setPasswordError('Le mot de passe doit contenir au moins 6 caractères');
+    return;
+  }
+  
+  if (!passwordData.currentPassword) {
+    setPasswordError('Veuillez entrer votre mot de passe actuel');
+    return;
+  }
+  
+  setChangingPassword(true);
+  setPasswordError(null);
+  setPasswordSuccess(null);
+  
+  try {
+    // ✅ Utiliser la bonne route : /me/password
+    const response = await fetch(`${API_BASE_URL}/users/me/password`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`
+      },
+      body: JSON.stringify({
+        currentPassword: passwordData.currentPassword,
+        newPassword: passwordData.newPassword,
+        confirmPassword: passwordData.confirmPassword
+      })
+    });
     
-    const token = localStorage.getItem('token');
-    if (!token) {
-      setPasswordError('Vous devez être connecté');
-      return;
+    const data = await response.json();
+    
+    if (!response.ok) {
+      throw new Error(data.error || data.message || 'Erreur lors du changement de mot de passe');
     }
     
-    // Validation
-    if (passwordData.newPassword !== passwordData.confirmPassword) {
-      setPasswordError('Les mots de passe ne correspondent pas');
-      return;
-    }
+    setPasswordSuccess('Mot de passe changé avec succès !');
+    setPasswordData({
+      currentPassword: '',
+      newPassword: '',
+      confirmPassword: ''
+    });
     
-    if (passwordData.newPassword.length < 6) {
-      setPasswordError('Le mot de passe doit contenir au moins 6 caractères');
-      return;
-    }
+    setTimeout(() => setPasswordSuccess(null), 3000);
     
-    if (!passwordData.currentPassword) {
-      setPasswordError('Veuillez entrer votre mot de passe actuel');
-      return;
-    }
-    
-    setChangingPassword(true);
-    setPasswordError(null);
-    setPasswordSuccess(null);
-    
-    try {
-      // Tentative avec la route dédiée
-      let response = await fetch(`${API_BASE_URL}/users/me/change-password`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify({
-          currentPassword: passwordData.currentPassword,
-          newPassword: passwordData.newPassword,
-          confirmPassword: passwordData.confirmPassword
-        })
-      });
-      
-      // Fallback: Si la route n'existe pas, essayer avec PUT
-      if (response.status === 404) {
-        console.warn('Route de changement de mot de passe non trouvée, tentative avec PUT...');
-        response = await fetch(`${API_BASE_URL}/users/me`, {
-          method: 'PUT',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${token}`
-          },
-          body: JSON.stringify({
-            password: passwordData.newPassword,
-            currentPassword: passwordData.currentPassword
-          })
-        });
-      }
-      
-      const data = await response.json();
-      
-      if (!response.ok) {
-        throw new Error(data.message || 'Erreur lors du changement de mot de passe');
-      }
-      
-      setPasswordSuccess('Mot de passe changé avec succès !');
-      setPasswordData({
-        currentPassword: '',
-        newPassword: '',
-        confirmPassword: ''
-      });
-      
-      setTimeout(() => setPasswordSuccess(null), 3000);
-      
-    } catch (err) {
-      console.error('Erreur changement mot de passe:', err);
-      setPasswordError(err.message || 'Erreur lors du changement de mot de passe');
-    } finally {
-      setChangingPassword(false);
-    }
-  };
+  } catch (err) {
+    console.error('Erreur changement mot de passe:', err);
+    setPasswordError(err.message || 'Erreur lors du changement de mot de passe');
+  } finally {
+    setChangingPassword(false);
+  }
+};
 
   // ===== GESTIONNAIRES D'ÉVÉNEMENTS =====
   const handleProfileChange = (field, value) => {
