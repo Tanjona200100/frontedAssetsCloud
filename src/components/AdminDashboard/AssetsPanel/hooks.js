@@ -131,7 +131,6 @@ export const useFetchMetadata = () => {
           usersData = data.users || data.data || data;
         }
       } catch (e) {
-        console.log('Endpoint /users non disponible');
       }
 
       if (usersData.length === 0) {
@@ -146,7 +145,6 @@ export const useFetchMetadata = () => {
             usersData = data.users || data.data || data;
           }
         } catch (e) {
-          console.log('Endpoint /admin/users non disponible');
         }
       }
 

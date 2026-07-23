@@ -176,7 +176,6 @@ export default function ProjectAssetsPage({ projectId, onBack }) {
         return !isInProject;
       });
       
-      console.log(`📊 ${available.length} assets disponibles sur ${allAssets.length} au total`);
       setAvailableAssets(available);
     } catch (err) {
       console.error("Erreur lors du chargement des assets disponibles:", err);

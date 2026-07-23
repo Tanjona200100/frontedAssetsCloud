@@ -47,7 +47,6 @@ const AdminDashboard = () => {
       path = `/admindashboard/${panelName}`;
     }
     
-    console.log('🔄 Mise à jour URL Admin:', path);
     navigationInProgress.current = true;
     navigate(path, { replace });
     setTimeout(() => {
@@ -57,7 +56,6 @@ const AdminDashboard = () => {
 
   // 📂 Fonction pour ouvrir les assets d'un projet
   const openProjectAssets = useCallback((projectId) => {
-    console.log('🟣 Admin - Ouverture des assets du projet:', projectId);
     if (!projectId) {
       console.warn('⚠️ Aucun projectId fourni');
       return;
@@ -71,7 +69,6 @@ const AdminDashboard = () => {
 
   // ⬅️ Fonction pour revenir à la liste des projets
   const backToProjects = useCallback(() => {
-    console.log('🟣 Admin - Retour à la liste des projets');
     setSelectedProjectId(null);
     setActivePanel("gestion");
     setSearchQuery("");
@@ -80,11 +77,9 @@ const AdminDashboard = () => {
 
   // 🧭 Navigation standard avec mise à jour URL
   const handleSetActivePanel = useCallback((newPanel) => {
-    console.log('🟢 Admin - Changement panel:', newPanel);
     
     // Éviter les boucles
     if (newPanel === activePanel && newPanel !== 'project-assets') {
-      console.log('ℹ️ Même panel, pas de changement');
       return;
     }
     
@@ -124,7 +119,6 @@ const AdminDashboard = () => {
       if (selectedProjectId) {
         sessionStorage.setItem('adminDashboardLastProjectId', selectedProjectId);
       }
-      console.log('💾 État Admin sauvegardé:', stateToSave);
     } catch (e) {
       console.error('❌ Erreur sauvegarde état:', e);
     }
@@ -144,7 +138,6 @@ const AdminDashboard = () => {
         const isRecent = Date.now() - parsed.timestamp < 600000;
         
         if (isRecent && parsed.activePanel) {
-          console.log('🔄 Restauration Admin depuis sessionStorage:', parsed);
           
           // Restaurer la recherche
           if (parsed.searchQuery) {
@@ -176,7 +169,6 @@ const AdminDashboard = () => {
       const lastProjectId = sessionStorage.getItem('adminDashboardLastProjectId');
       
       if (lastPanel) {
-        console.log('🔄 Restauration fallback - Panel:', lastPanel, 'ProjectId:', lastProjectId);
         
         if (lastPanel === 'project-assets' && lastProjectId) {
           setSelectedProjectId(lastProjectId);
@@ -202,19 +194,12 @@ const AdminDashboard = () => {
   // 🔄 Synchronisation avec l'URL au chargement initial
   useEffect(() => {
     if (!isInitialLoad.current) return;
-    
-    console.log('🔄 Synchronisation Admin avec URL:', { 
-      urlPanel, 
-      urlProjectId, 
-      pathname: location.pathname,
-      search: location.search
-    });
+  
     
     // Si l'URL contient des paramètres, on les priorise
     if (urlPanel === 'project-assets' && urlProjectId) {
       setSelectedProjectId(urlProjectId);
       setActivePanel('project-assets');
-      console.log(`✅ Chargement direct des assets du projet ${urlProjectId}`);
       setIsLoading(false);
       isInitialLoad.current = false;
       return;
@@ -222,7 +207,6 @@ const AdminDashboard = () => {
     
     if (urlPanel && ['dashboard', 'users', 'assets', 'stats', 'roles', 'gestion', 'categorie', 'settings', 'profil'].includes(urlPanel)) {
       setActivePanel(urlPanel);
-      console.log(`✅ Chargement direct du panel ${urlPanel}`);
       setIsLoading(false);
       isInitialLoad.current = false;
       return;
@@ -235,7 +219,6 @@ const AdminDashboard = () => {
       // Si rien n'est restauré, aller au dashboard
       setActivePanel('dashboard');
       setSelectedProjectId(null);
-      console.log('📊 Chargement du dashboard par défaut');
     }
     
     setIsLoading(false);
@@ -250,14 +233,12 @@ const AdminDashboard = () => {
     
     // Vérifier si le panel est valide
     if (!validPanels.includes(activePanel)) {
-      console.log('🟡 Panel invalide, reset à dashboard');
       handleSetActivePanel('dashboard');
       return;
     }
     
     // Si le panel est project-assets mais qu'il n'y a pas d'ID
     if (activePanel === 'project-assets' && !selectedProjectId) {
-      console.log('🟡 Project-assets sans ID, retour à gestion');
       handleSetActivePanel('gestion');
       return;
     }
@@ -270,7 +251,6 @@ const AdminDashboard = () => {
   // 🔍 Gérer la recherche globale
   const handleSearch = useCallback((query) => {
     setSearchQuery(query);
-    console.log(`🔍 Recherche Admin: "${query}" dans le panel ${activePanel}`);
     // Sauvegarder la recherche
     setTimeout(() => saveStateToStorage(), 100);
   }, [activePanel, saveStateToStorage]);
@@ -281,12 +261,7 @@ const AdminDashboard = () => {
 
   // 🎨 Rendu du panel actif
   const renderPanel = useCallback(() => {
-    console.log(`🎨 Rendu du panel: ${activePanel}`, { 
-      selectedProjectId, 
-      searchQuery,
-      isLoading 
-    });
-    
+       
     switch (activePanel) {
       case "dashboard":
         return <DashboardPanel searchQuery={searchQuery} />;

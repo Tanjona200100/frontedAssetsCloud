@@ -77,7 +77,6 @@ export default function ProjectsPanel({ onOpenProject }) { // ← Accepte la pro
   
   // Fonction pour ouvrir un projet et voir ses assets
   const handleOpenProject = (project) => {
-    console.log('🔵 Projet cliqué:', project);
     if (onOpenProject && project && project.id) {
       onOpenProject(project.id);
     }
@@ -147,7 +146,6 @@ export default function ProjectsPanel({ onOpenProject }) { // ← Accepte la pro
       setProjects(prev => [newProject, ...prev]);
       closeModal();
       
-      console.log('Projet créé avec succès:', newProject);
     } catch (err) {
       console.error("Erreur lors de la création:", err);
       setError(err.message || "Erreur lors de la création du projet");
@@ -192,7 +190,6 @@ export default function ProjectsPanel({ onOpenProject }) { // ← Accepte la pro
       ));
       closeModal();
       
-      console.log('Projet modifié avec succès:', updatedProject);
     } catch (err) {
       console.error("Erreur lors de la modification:", err);
       setError(err.message || "Erreur lors de la modification du projet");
@@ -213,7 +210,6 @@ export default function ProjectsPanel({ onOpenProject }) { // ← Accepte la pro
       });
       
       setProjects(prev => prev.filter(p => p.id !== projectId));
-      console.log('Projet supprimé:', projectId);
     } catch (err) {
       console.error("Erreur lors de la suppression:", err);
       setError(err.message || "Erreur lors de la suppression du projet");

@@ -15,7 +15,7 @@ export const AuthProvider = ({ children }) => {
   const [loading, setLoading] = useState(true);
   const [token, setToken] = useState(localStorage.getItem('token'));
 
-  const API_BASE_URL = process.env.REACT_APP_API_BASE_URL || 'http://192.168.2.160:5000/api';
+  const API_BASE_URL = process.env.REACT_APP_API_BASE_URL ;
 
   // Fonction pour récupérer le profil utilisateur
   const fetchProfile = useCallback(async () => {
@@ -26,7 +26,6 @@ export const AuthProvider = ({ children }) => {
         return null;
       }
 
-      console.log('🔍 Fetching profile from:', `${API_BASE_URL}/auth/profile`);
       
       const response = await fetch(`${API_BASE_URL}/auth/profile`, {
         method: 'GET',
@@ -70,7 +69,6 @@ export const AuthProvider = ({ children }) => {
 // contexts/AuthContext.js (extrait modifié)
 const login = async (email, password) => {
   try {
-    console.log('🔐 Tentative de connexion...');
     
     const response = await fetch(`${API_BASE_URL}/auth/login`, {
       method: 'POST',
@@ -89,7 +87,6 @@ const login = async (email, password) => {
       localStorage.setItem('expiresAt', expiresAt);
       setToken(token);
       setUser(user);
-      console.log('✅ Connexion réussie pour:', user.email, 'Rôle:', user.role);
       return { success: true, user }; // Retourner l'utilisateur aussi
     }
     
@@ -134,11 +131,7 @@ const login = async (email, password) => {
 // Fonction d'inscription corrigée
 const register = async (userData) => {
   try {
-    console.log("📤 Envoi des données:", { 
-      ...userData, 
-      profile_image_url: userData.profile_image_url ? "✅ Présent (base64)" : "❌ Absent" 
-    });
-    
+   
     const response = await fetch(`${API_BASE_URL}/auth/register`, {
       method: 'POST',
       headers: {
@@ -148,7 +141,6 @@ const register = async (userData) => {
     });
 
     const data = await response.json();
-    console.log("📥 Réponse du serveur:", data);
     
     if (response.ok && data.success) {
       const returnedUser = data.user || data.data || {};

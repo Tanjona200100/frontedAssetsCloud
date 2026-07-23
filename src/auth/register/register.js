@@ -241,11 +241,6 @@ const Register = () => {
         profile_image_url: formData.profile_image_url || null
       };
 
-      console.log("📤 Envoi inscription:", {
-        ...userData,
-        profile_image_url: userData.profile_image_url ? "✅ Présent" : "❌ Absent"
-      });
-
       const result = await register(userData);
 
       if (!result.success) {

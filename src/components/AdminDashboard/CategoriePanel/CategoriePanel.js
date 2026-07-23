@@ -282,7 +282,6 @@ export default function CategoriePanel({ searchQuery = '' }) {
       setCategories(prev => [...prev, formattedCategory]);
       closeModal();
       
-      console.log('Catégorie créée avec succès:', newCategory);
     } catch (err) {
       console.error("Erreur lors de la création:", err);
       setError(err.message || "Erreur lors de la création de la catégorie");
@@ -342,7 +341,6 @@ export default function CategoriePanel({ searchQuery = '' }) {
       ));
       closeModal();
       
-      console.log('Catégorie modifiée avec succès:', updatedCategory);
     } catch (err) {
       console.error("Erreur lors de la modification:", err);
       setError(err.message || "Erreur lors de la modification de la catégorie");
@@ -368,7 +366,6 @@ export default function CategoriePanel({ searchQuery = '' }) {
       });
       
       setCategories(prev => prev.filter(cat => cat.id !== categoryId));
-      console.log('Catégorie supprimée:', categoryId);
     } catch (err) {
       console.error("Erreur lors de la suppression:", err);
       setError(err.message || "Erreur lors de la suppression de la catégorie");

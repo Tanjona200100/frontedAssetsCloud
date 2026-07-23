@@ -99,7 +99,6 @@ const Login = () => {
 
     try {
       const url = `${API_BASE_URL}/auth/forgot-password`;
-      console.log("Calling forgot password API:", url);
       
       const response = await fetch(url, {
         method: "POST",

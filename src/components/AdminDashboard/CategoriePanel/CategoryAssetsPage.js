@@ -16,8 +16,6 @@ const DEBUG_CATEGORY_ASSETS = process.env.NODE_ENV === 'development';
 
 const debugLog = (...args) => {
   if (DEBUG_CATEGORY_ASSETS) {
-    // eslint-disable-next-line no-console
-    console.log(...args);
   }
 };
 
