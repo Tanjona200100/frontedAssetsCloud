@@ -7,6 +7,7 @@ import { FaRegFile } from "react-icons/fa6";
 import { RiDossierFill } from "react-icons/ri";
 import { MdWeb, MdPalette, MdPhoneAndroid, MdBuild, MdBarChart, MdSecurity, MdTrendingUp, MdMenuBook, MdSportsEsports, MdSmartToy, MdCloud, MdInventory, MdFolder } from 'react-icons/md';
 import ModelViewer from '../../UserDashboard/ModelViewer';
+import { MdImage, MdVideoLibrary } from 'react-icons/md';
 
 const API_BASE_URL = process.env.REACT_APP_API_URL;
 
@@ -1006,335 +1007,359 @@ export default function CategoryAssetsPage({ categoryId, categoryData, onBack })
         )}
       </div>
 
-      {/* Modal d'ajout d'asset */}
-      {showAddAssetModal && (
-        <div className="modal-overlay" onClick={() => setShowAddAssetModal(false)}>
-          <div className="modal-container" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 900, maxHeight: '85vh', overflow: 'auto' }}>
-            <div className="modal-header">
-              <h3>Ajouter un asset à la catégorie</h3>
-              <button className="modal-close" onClick={() => setShowAddAssetModal(false)}>×</button>
-            </div>
-            <div className="modal-body">
-              {/* Barre de recherche et filtres */}
-              <div style={{ marginBottom: 16 }}>
-                <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'center' }}>
-                  <div style={{ flex: 1, minWidth: 200, position: 'relative' }}>
-                    <MdSearch style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: '#666' }} />
-                    <input
-                      type="text"
-                      placeholder="Rechercher un asset sans catégorie..."
-                      value={searchTerm}
-                      onChange={(e) => setSearchTerm(e.target.value)}
-                      style={{
-                        width: '100%',
-                        padding: '8px 12px 8px 36px',
-                        background: 'rgba(255,255,255,.05)',
-                        border: '1px solid rgba(255,255,255,.1)',
-                        borderRadius: 8,
-                        color: 'white',
-                        fontSize: 13,
-                        outline: 'none'
-                      }}
-                    />
-                    {searchTerm && (
-                      <MdClose
-                        style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', cursor: 'pointer', color: '#666' }}
-                        onClick={() => setSearchTerm('')}
-                      />
-                    )}
-                  </div>
-
-                  <select
-                    value={filterType}
-                    onChange={(e) => setFilterType(e.target.value)}
-                    style={{
-                      padding: '8px 12px',
-                      background: 'rgba(255,255,255,.05)',
-                      border: '1px solid rgba(255,255,255,.1)',
-                      borderRadius: 8,
-                      color: 'white',
-                      fontSize: 13,
-                      outline: 'none',
-                      cursor: 'pointer'
-                    }}
-                  >
-                    <option value="all">📁 Tous les types</option>
-                    <option value="image">🖼️ Images</option>
-                    <option value="3d_model">🎮 Modèles 3D</option>
-                    <option value="video">🎬 Vidéos</option>
-                    <option value="audio">🎵 Audio</option>
-                    <option value="document">📄 Documents</option>
-                    <option value="other">📎 Autres</option>
-                  </select>
-
-                  <select
-                    value={filterVisibility}
-                    onChange={(e) => setFilterVisibility(e.target.value)}
-                    style={{
-                      padding: '8px 12px',
-                      background: 'rgba(255,255,255,.05)',
-                      border: '1px solid rgba(255,255,255,.1)',
-                      borderRadius: 8,
-                      color: 'white',
-                      fontSize: 13,
-                      outline: 'none',
-                      cursor: 'pointer'
-                    }}
-                  >
-                    <option value="all">👁️ Toutes visibilités</option>
-                    <option value="public">🌍 Public</option>
-                    <option value="team">👥 Team</option>
-                    <option value="private">🔒 Privé</option>
-                  </select>
-
-                  <select
-                    value={filterUser}
-                    onChange={(e) => setFilterUser(e.target.value)}
-                    style={{
-                      padding: '8px 12px',
-                      background: 'rgba(255,255,255,.05)',
-                      border: '1px solid rgba(255,255,255,.1)',
-                      borderRadius: 8,
-                      color: 'white',
-                      fontSize: 13,
-                      outline: 'none',
-                      cursor: 'pointer',
-                      maxWidth: 200
-                    }}
-                  >
-                    <option value="all">👤 Tous les créateurs</option>
-                    {loadingUsers ? (
-                      <option value="" disabled>Chargement...</option>
-                    ) : (
-                      users.map(user => (
-                        <option key={user.id} value={user.id}>
-                          {user.first_name || user.name || user.email || `ID: ${user.id}`}
-                        </option>
-                      ))
-                    )}
-                  </select>
-                </div>
-
-                <div style={{ marginTop: 8, fontSize: 12, color: 'var(--dim)' }}>
-                  {availableAssets.length === 0 ? (
-                    <span>✅ Tous les assets ont déjà une catégorie</span>
-                  ) : (
-                    <span>📊 {filteredAvailableAssets.length} asset(s) sans catégorie disponible(s)</span>
-                  )}
-                </div>
-              </div>
-
-              {loadingAvailable ? (
-                <div style={{ textAlign: 'center', padding: '60px' }}>
-                  <div className="loading-spinner">Chargement des assets disponibles...</div>
-                </div>
-              ) : filteredAvailableAssets.length === 0 ? (
-                <div style={{ textAlign: 'center', padding: '60px' }}>
-                  <div style={{ fontSize: 48, marginBottom: 16 }}>✨</div>
-                  <div style={{ fontSize: 14, color: 'var(--dim)', marginBottom: 8 }}>
-                    {availableAssets.length === 0 ? 'Tous les assets ont déjà une catégorie' : 'Aucun asset ne correspond aux filtres'}
-                  </div>
-                  <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
-                    {availableAssets.length === 0
-                      ? 'Les assets ne peuvent être ajoutés que s\'ils n\'ont pas de catégorie'
-                      : 'Essayez de modifier vos filtres de recherche'
-                    }
-                  </div>
-                  {searchTerm && (
-                    <button
-                      onClick={() => setSearchTerm('')}
-                      style={{
-                        marginTop: 16,
-                        background: 'rgba(255,255,255,.1)',
-                        border: 'none',
-                        padding: '8px 16px',
-                        borderRadius: 8,
-                        color: 'white',
-                        cursor: 'pointer'
-                      }}
-                    >
-                      Effacer la recherche
-                    </button>
-                  )}
-                </div>
-              ) : (
-                <div style={{
-                  display: 'grid',
-                  gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))',
-                  gap: '16px'
-                }}>
-                  {filteredAvailableAssets.map((asset) => {
-                    const is3D = is3DModel(asset);
-                    const assetDisplayName = asset.title || asset.name;
-                    return (
-                      <div
-                        key={asset.id}
-                        className="available-asset-card"
-                        style={{
-                          background: 'rgba(0,0,0,.3)',
-                          borderRadius: 10,
-                          overflow: 'hidden',
-                          border: '1px solid rgba(255,255,255,.06)',
-                          cursor: 'pointer',
-                          transition: 'transform 0.2s, border-color 0.2s'
-                        }}
-                        onClick={() => handleAddAsset(asset.id)}
-                        onMouseEnter={(e) => {
-                          e.currentTarget.style.transform = 'translateY(-4px)';
-                          e.currentTarget.style.borderColor = 'rgba(59,130,246,.4)';
-                        }}
-                        onMouseLeave={(e) => {
-                          e.currentTarget.style.transform = 'translateY(0)';
-                          e.currentTarget.style.borderColor = 'rgba(255,255,255,.06)';
-                        }}
-                      >
-                        <div style={{
-                          height: 160,
-                          background: 'rgba(0,0,0,.4)',
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          position: 'relative',
-                          overflow: 'hidden'
-                        }}>
-                          {is3D && asset.capture_url ? (
-                            <img
-                              src={`${API_BASE_URL.replace('/api', '')}${asset.capture_url}`}
-                              alt={`Aperçu de ${assetDisplayName}`}
-                              style={{
-                                width: '100%',
-                                height: '100%',
-                                objectFit: 'cover',
-                                objectPosition: 'center'
-                              }}
-                              onError={(e) => {
-                                e.target.style.display = 'none';
-                                e.target.parentElement.querySelector('.default-icon').style.display = 'flex';
-                              }}
-                            />
-                          ) : is3D ? (
-                            <div className="default-icon" style={{ textAlign: 'center' }}>
-                              <PiCubeLight size={48} style={{ opacity: 0.6 }} />
-                            </div>
-                          ) : asset.file_type === 'image' && asset.capture_url ? (
-                            <img
-                              src={`${API_BASE_URL.replace('/api', '')}${asset.capture_url}`}
-                              alt={`Aperçu de ${assetDisplayName}`}
-                              style={{
-                                width: '100%',
-                                height: '100%',
-                                objectFit: 'cover',
-                                objectPosition: 'center'
-                              }}
-                            />
-                          ) : (
-                            <div className="default-icon" style={{ textAlign: 'center' }}>
-                              <FaRegFile size={48} style={{ opacity: 0.6 }} />
-                            </div>
-                          )}
-
-                          <div style={{
-                            position: 'absolute',
-                            top: 8,
-                            right: 8,
-                            background: 'rgba(0,0,0,.7)',
-                            padding: '4px 8px',
-                            borderRadius: 6,
-                            fontSize: 10,
-                            color: '#3B82F6'
-                          }}>
-                            {asset.file_type === '3d_model' ? '3D' :
-                             asset.file_type === 'image' ? 'IMAGE' :
-                             asset.file_type === 'video' ? 'VIDÉO' :
-                             asset.file_type?.toUpperCase() || 'FICHIER'}
-                          </div>
-
-                          <div style={{
-                            position: 'absolute',
-                            bottom: 8,
-                            left: 8,
-                            background: 'rgba(16,185,129,.9)',
-                            padding: '2px 10px',
-                            borderRadius: 12,
-                            fontSize: 10,
-                            color: 'white'
-                          }}>
-                            ✓ Sans catégorie
-                          </div>
-                        </div>
-
-                        <div style={{ padding: '12px' }}>
-                          <div style={{ fontWeight: 500, fontSize: 13, marginBottom: 4, color: 'white' }}>
-                            {assetDisplayName}
-                          </div>
-                          <div style={{ fontSize: 10, color: '#666', marginBottom: 6 }}>
-                            {formatSize(asset.file_size)} • {formatDate(asset.created_at)}
-                          </div>
-                          {asset.description && (
-                            <div style={{
-                              fontSize: 10,
-                              color: '#888',
-                              overflow: 'hidden',
-                              textOverflow: 'ellipsis',
-                              whiteSpace: 'nowrap',
-                              marginBottom: 8
-                            }}>
-                              {asset.description}
-                            </div>
-                          )}
-                          <div style={{
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: 8,
-                            marginTop: 8,
-                            paddingTop: 8,
-                            borderTop: '1px solid rgba(255,255,255,.06)'
-                          }}>
-                            <div style={{
-                              background: 'rgba(59,130,246,.15)',
-                              padding: '4px 8px',
-                              borderRadius: 4,
-                              fontSize: 10,
-                              color: '#3B82F6'
-                            }}>
-                              {asset.visibility === 'public' ? '🌍 Public' :
-                               asset.visibility === 'team' ? '👥 Team' : '🔒 Privé'}
-                            </div>
-                            <div style={{
-                              fontSize: 10,
-                              color: '#666',
-                              marginLeft: 'auto'
-                            }}>
-                              {asset.created_by_name || asset.uploaded_by_name || `ID: ${asset.created_by || asset.user_id}`}
-                            </div>
-                            <button
-                              style={{
-                                background: '#3B82F6',
-                                border: 'none',
-                                padding: '6px 12px',
-                                borderRadius: 6,
-                                color: 'white',
-                                cursor: 'pointer',
-                                fontSize: 11,
-                                display: 'flex',
-                                alignItems: 'center',
-                                gap: 4
-                              }}
-                            >
-                              <MdAdd size={12} />
-                              Ajouter
-                            </button>
-                          </div>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
+{/* Modal d'ajout d'asset */}
+{showAddAssetModal && (
+  <div className="modal-overlay" onClick={() => setShowAddAssetModal(false)}>
+    <div className="modal-container" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 900, maxHeight: '85vh', overflow: 'auto' }}>
+      <div className="modal-header">
+        <h3>Ajouter un asset à la catégorie</h3>
+        <button className="modal-close" onClick={() => setShowAddAssetModal(false)}>×</button>
+      </div>
+      <div className="modal-body">
+        {/* Barre de recherche et filtres */}
+        <div style={{ marginBottom: 16 }}>
+          <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'center' }}>
+            <div style={{ flex: 1, minWidth: 200, position: 'relative' }}>
+              <MdSearch style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: '#666' }} />
+              <input
+                type="text"
+                placeholder="Rechercher un asset sans catégorie..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                style={{
+                  width: '100%',
+                  padding: '8px 12px 8px 36px',
+                  background: 'rgba(255,255,255,.05)',
+                  border: '1px solid rgba(255,255,255,.1)',
+                  borderRadius: 8,
+                  color: 'white',
+                  fontSize: 13,
+                  outline: 'none'
+                }}
+              />
+              {searchTerm && (
+                <MdClose
+                  style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', cursor: 'pointer', color: '#666' }}
+                  onClick={() => setSearchTerm('')}
+                />
               )}
             </div>
+
+            <select
+              value={filterType}
+              onChange={(e) => setFilterType(e.target.value)}
+              style={{
+                padding: '8px 12px',
+                background: 'rgba(255,255,255,.05)',
+                border: '1px solid rgba(255,255,255,.1)',
+                borderRadius: 8,
+                color: 'white',
+                fontSize: 13,
+                outline: 'none',
+                cursor: 'pointer'
+              }}
+            >
+              <option value="all">📁 Tous les types</option>
+              <option value="image">🖼️ Images</option>
+              <option value="3d_model">🎮 Modèles 3D</option>
+              <option value="video">🎬 Vidéos</option>
+              <option value="audio">🎵 Audio</option>
+              <option value="document">📄 Documents</option>
+              <option value="other">📎 Autres</option>
+            </select>
+
+            <select
+              value={filterVisibility}
+              onChange={(e) => setFilterVisibility(e.target.value)}
+              style={{
+                padding: '8px 12px',
+                background: 'rgba(255,255,255,.05)',
+                border: '1px solid rgba(255,255,255,.1)',
+                borderRadius: 8,
+                color: 'white',
+                fontSize: 13,
+                outline: 'none',
+                cursor: 'pointer'
+              }}
+            >
+              <option value="all">👁️ Toutes visibilités</option>
+              <option value="public">🌍 Public</option>
+              <option value="team">👥 Team</option>
+              <option value="private">🔒 Privé</option>
+            </select>
+
+            <select
+              value={filterUser}
+              onChange={(e) => setFilterUser(e.target.value)}
+              style={{
+                padding: '8px 12px',
+                background: 'rgba(255,255,255,.05)',
+                border: '1px solid rgba(255,255,255,.1)',
+                borderRadius: 8,
+                color: 'white',
+                fontSize: 13,
+                outline: 'none',
+                cursor: 'pointer',
+                maxWidth: 200
+              }}
+            >
+              <option value="all">👤 Tous les créateurs</option>
+              {loadingUsers ? (
+                <option value="" disabled>Chargement...</option>
+              ) : (
+                users.map(user => (
+                  <option key={user.id} value={user.id}>
+                    {user.first_name || user.name || user.email || `ID: ${user.id}`}
+                  </option>
+                ))
+              )}
+            </select>
+          </div>
+
+          <div style={{ marginTop: 8, fontSize: 12, color: 'var(--dim)' }}>
+            {availableAssets.length === 0 ? (
+              <span>✅ Tous les assets ont déjà une catégorie</span>
+            ) : (
+              <span>📊 {filteredAvailableAssets.length} asset(s) sans catégorie disponible(s)</span>
+            )}
           </div>
         </div>
-      )}
+
+        {loadingAvailable ? (
+          <div style={{ textAlign: 'center', padding: '60px' }}>
+            <div className="loading-spinner">Chargement des assets disponibles...</div>
+          </div>
+        ) : filteredAvailableAssets.length === 0 ? (
+          <div style={{ textAlign: 'center', padding: '60px' }}>
+            <div style={{ fontSize: 48, marginBottom: 16 }}>✨</div>
+            <div style={{ fontSize: 14, color: 'var(--dim)', marginBottom: 8 }}>
+              {availableAssets.length === 0 ? 'Tous les assets ont déjà une catégorie' : 'Aucun asset ne correspond aux filtres'}
+            </div>
+            <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
+              {availableAssets.length === 0
+                ? 'Les assets ne peuvent être ajoutés que s\'ils n\'ont pas de catégorie'
+                : 'Essayez de modifier vos filtres de recherche'
+              }
+            </div>
+            {searchTerm && (
+              <button
+                onClick={() => setSearchTerm('')}
+                style={{
+                  marginTop: 16,
+                  background: 'rgba(255,255,255,.1)',
+                  border: 'none',
+                  padding: '8px 16px',
+                  borderRadius: 8,
+                  color: 'white',
+                  cursor: 'pointer'
+                }}
+              >
+                Effacer la recherche
+              </button>
+            )}
+          </div>
+        ) : (
+          <div style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))',
+            gap: '16px'
+          }}>
+            {filteredAvailableAssets.map((asset) => {
+              const is3D = is3DModel(asset);
+              const assetDisplayName = asset.title || asset.name;
+              
+              // Fonction pour construire l'URL de capture
+              const getCaptureUrl = (capturePath) => {
+                if (!capturePath) return null;
+                // Si le chemin commence déjà par http, on le retourne tel quel
+                if (capturePath.startsWith('http')) return capturePath;
+                // Sinon on construit l'URL complète
+                const baseUrl = API_BASE_URL.replace('/api', '');
+                return `${baseUrl}${capturePath}`;
+              };
+
+              const captureUrl = getCaptureUrl(asset.capture_url);
+
+              return (
+                <div
+                  key={asset.id}
+                  className="available-asset-card"
+                  style={{
+                    background: 'rgba(0,0,0,.3)',
+                    borderRadius: 10,
+                    overflow: 'hidden',
+                    border: '1px solid rgba(255,255,255,.06)',
+                    cursor: 'pointer',
+                    transition: 'transform 0.2s, border-color 0.2s'
+                  }}
+                  onClick={() => handleAddAsset(asset.id)}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.transform = 'translateY(-4px)';
+                    e.currentTarget.style.borderColor = 'rgba(59,130,246,.4)';
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.transform = 'translateY(0)';
+                    e.currentTarget.style.borderColor = 'rgba(255,255,255,.06)';
+                  }}
+                >
+                  {/* Zone de preview avec capture */}
+                  <div style={{
+                    height: 160,
+                    background: 'rgba(0,0,0,.4)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    position: 'relative',
+                    overflow: 'hidden'
+                  }}>
+                    {captureUrl ? (
+                      <img
+                        src={captureUrl}
+                        alt={`Aperçu de ${assetDisplayName}`}
+                        style={{
+                          width: '100%',
+                          height: '100%',
+                          objectFit: 'cover',
+                          objectPosition: 'center'
+                        }}
+                        onError={(e) => {
+                          // En cas d'erreur de chargement de l'image, afficher l'icône par défaut
+                          e.target.style.display = 'none';
+                          const defaultIcon = e.target.parentElement.querySelector('.default-icon');
+                          if (defaultIcon) {
+                            defaultIcon.style.display = 'flex';
+                          }
+                        }}
+                      />
+                    ) : (
+                      <div className="default-icon" style={{ 
+                        display: 'flex', 
+                        flexDirection: 'column',
+                        alignItems: 'center', 
+                        justifyContent: 'center',
+                        width: '100%',
+                        height: '100%'
+                      }}>
+                        {is3D ? (
+                          <PiCubeLight size={48} style={{ opacity: 0.6 }} />
+                        ) : asset.file_type === 'image' ? (
+                          <MdImage size={48} style={{ opacity: 0.6 }} />
+                        ) : asset.file_type === 'video' ? (
+                          <MdVideoLibrary size={48} style={{ opacity: 0.6 }} />
+                        ) : (
+                          <FaRegFile size={48} style={{ opacity: 0.6 }} />
+                        )}
+                        <span style={{ fontSize: 11, color: '#666', marginTop: 4 }}>
+                          {is3D ? 'Modèle 3D' : 
+                           asset.file_type === 'image' ? 'Image' :
+                           asset.file_type === 'video' ? 'Vidéo' : 
+                           asset.file_type || 'Fichier'}
+                        </span>
+                      </div>
+                    )}
+
+                    <div style={{
+                      position: 'absolute',
+                      top: 8,
+                      right: 8,
+                      background: 'rgba(0,0,0,.7)',
+                      padding: '4px 8px',
+                      borderRadius: 6,
+                      fontSize: 10,
+                      color: '#3B82F6'
+                    }}>
+                      {asset.file_type === '3d_model' ? '3D' :
+                       asset.file_type === 'image' ? 'IMAGE' :
+                       asset.file_type === 'video' ? 'VIDÉO' :
+                       asset.file_type?.toUpperCase() || 'FICHIER'}
+                    </div>
+
+                    <div style={{
+                      position: 'absolute',
+                      bottom: 8,
+                      left: 8,
+                      background: 'rgba(16,185,129,.9)',
+                      padding: '2px 10px',
+                      borderRadius: 12,
+                      fontSize: 10,
+                      color: 'white'
+                    }}>
+                      ✓ Sans catégorie
+                    </div>
+                  </div>
+
+                  <div style={{ padding: '12px' }}>
+                    <div style={{ fontWeight: 500, fontSize: 13, marginBottom: 4, color: 'white' }}>
+                      {assetDisplayName}
+                    </div>
+                    <div style={{ fontSize: 10, color: '#666', marginBottom: 6 }}>
+                      {formatSize(asset.file_size)} • {formatDate(asset.created_at)}
+                    </div>
+                    {asset.description && (
+                      <div style={{
+                        fontSize: 10,
+                        color: '#888',
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                        whiteSpace: 'nowrap',
+                        marginBottom: 8
+                      }}>
+                        {asset.description}
+                      </div>
+                    )}
+                    <div style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 8,
+                      marginTop: 8,
+                      paddingTop: 8,
+                      borderTop: '1px solid rgba(255,255,255,.06)'
+                    }}>
+                      <div style={{
+                        background: 'rgba(59,130,246,.15)',
+                        padding: '4px 8px',
+                        borderRadius: 4,
+                        fontSize: 10,
+                        color: '#3B82F6'
+                      }}>
+                        {asset.visibility === 'public' ? '🌍 Public' :
+                         asset.visibility === 'team' ? '👥 Team' : '🔒 Privé'}
+                      </div>
+                      <div style={{
+                        fontSize: 10,
+                        color: '#666',
+                        marginLeft: 'auto'
+                      }}>
+                        {asset.created_by_name || asset.uploaded_by_name || `ID: ${asset.created_by || asset.user_id}`}
+                      </div>
+                      <button
+                        style={{
+                          background: '#3B82F6',
+                          border: 'none',
+                          padding: '6px 12px',
+                          borderRadius: 6,
+                          color: 'white',
+                          cursor: 'pointer',
+                          fontSize: 11,
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: 4
+                        }}
+                      >
+                        <MdAdd size={12} />
+                        Ajouter
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    </div>
+  </div>
+)}
 
       {/* Modal de confirmation retrait */}
       {showConfirmModal && assetToDelete && (

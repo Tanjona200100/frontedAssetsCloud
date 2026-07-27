@@ -13,7 +13,7 @@ import {
   MdDescription, MdSecurity
 } from 'react-icons/md';
 
-const API_BASE_URL = process.env.REACT_APP_API_BASE_URL || 'http://localhost:5000/api';
+const API_BASE_URL = process.env.REACT_APP_API_BASE_URL ;
 
 export default function ProfilePanel({ searchQuery }) {
   // ===== HOOKS =====

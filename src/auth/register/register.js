@@ -11,7 +11,6 @@ const Register = () => {
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
   const [loading, setLoading] = useState(false);
-  const [imagePreview, setImagePreview] = useState(null);
   const [step, setStep] = useState(1);
 
   // États pour les popups
@@ -30,7 +29,6 @@ const Register = () => {
     password: "",
     confirmPassword: "",
     role: "developpeur",
-    profile_image_url: null
   });
 
   // Auto-fermeture du popup
@@ -64,79 +62,6 @@ const Register = () => {
     setFormData((prev) => ({ ...prev, [name]: value }));
     // Effacer l'erreur lors de la saisie
     setError("");
-  };
-
-  // Redimensionnement et optimisation de l'image
-  const resizeAndOptimizeImage = (file) => {
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.readAsDataURL(file);
-      reader.onload = (e) => {
-        const img = new Image();
-        img.src = e.target.result;
-        img.onload = () => {
-          const canvas = document.createElement('canvas');
-          let width = img.width;
-          let height = img.height;
-          
-          const maxSize = 200;
-          if (width > height) {
-            if (width > maxSize) {
-              height = (height * maxSize) / width;
-              width = maxSize;
-            }
-          } else {
-            if (height > maxSize) {
-              width = (width * maxSize) / height;
-              height = maxSize;
-            }
-          }
-          
-          canvas.width = width;
-          canvas.height = height;
-          const ctx = canvas.getContext('2d');
-          ctx.drawImage(img, 0, 0, width, height);
-          
-          const optimizedBase64 = canvas.toDataURL('image/jpeg', 0.7);
-          resolve(optimizedBase64);
-        };
-        img.onerror = reject;
-      };
-      reader.onerror = reject;
-    });
-  };
-
-  const handleImageChange = async (e) => {
-    const file = e.target.files[0];
-    if (file) {
-      if (!file.type.startsWith("image/")) {
-        const errorMsg = "Veuillez sélectionner une image valide.";
-        setError(errorMsg);
-        showPopup('error', 'Format invalide', errorMsg);
-        return;
-      }
-      if (file.size > 5 * 1024 * 1024) {
-        const errorMsg = "L'image ne doit pas dépasser 5MB.";
-        setError(errorMsg);
-        showPopup('error', 'Fichier trop volumineux', errorMsg);
-        return;
-      }
-      
-      try {
-        const optimizedImage = await resizeAndOptimizeImage(file);
-        setFormData((prev) => ({ ...prev, profile_image_url: optimizedImage }));
-        setImagePreview(optimizedImage);
-        showPopup('success', 'Image optimisée', 'Photo de profil chargée avec succès !', 3000);
-      } catch (err) {
-        console.error("Erreur optimisation:", err);
-        const errorMsg = "Erreur lors du traitement de l'image";
-        setError(errorMsg);
-        showPopup('error', 'Erreur', errorMsg);
-      }
-    } else {
-      setFormData((prev) => ({ ...prev, profile_image_url: null }));
-      setImagePreview(null);
-    }
   };
 
   const isStep1Complete = () =>
@@ -238,7 +163,6 @@ const Register = () => {
         email: formData.email.trim().toLowerCase(),
         password: formData.password,
         role: formData.role,
-        profile_image_url: formData.profile_image_url || null
       };
 
       const result = await register(userData);
@@ -343,55 +267,6 @@ const Register = () => {
 
   const renderStep3 = () => (
     <>
-      <div className="input-group">
-        <label>Photo de profil (optionnel)</label>
-        <input
-          type="file"
-          name="profile_image"
-          accept="image/jpeg, image/png, image/jpg, image/gif"
-          onChange={handleImageChange}
-          className="file-input"
-        />
-        <small style={{ color: "#666", fontSize: "12px" }}>
-          Formats acceptés : JPG, PNG, GIF (max 5MB) • L'image sera optimisée automatiquement
-        </small>
-        {imagePreview && (
-          <div className="image-preview">
-            <img
-              src={imagePreview}
-              alt="Aperçu"
-              style={{
-                width: "100px",
-                height: "100px",
-                objectFit: "cover",
-                borderRadius: "50%",
-                marginTop: "10px",
-                border: "2px solid #4a90e2"
-              }}
-            />
-            <button
-              type="button"
-              onClick={() => {
-                setFormData((prev) => ({ ...prev, profile_image_url: null }));
-                setImagePreview(null);
-                showPopup('info', 'Photo supprimée', 'Photo de profil retirée', 2000);
-              }}
-              style={{
-                marginLeft: "10px",
-                padding: "5px 10px",
-                background: "#f44336",
-                color: "white",
-                border: "none",
-                borderRadius: "5px",
-                cursor: "pointer",
-                fontSize: "12px"
-              }}
-            >
-              Supprimer
-            </button>
-          </div>
-        )}
-      </div>
       <div className="input-group">
         <label>Rôle *</label>
         <select
