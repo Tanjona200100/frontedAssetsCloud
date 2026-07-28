@@ -106,7 +106,6 @@ function normalizeModelSize(model, targetSize = TARGET_MODEL_SIZE) {
     
     if (maxDim > MAX_MODEL_SIZE || maxDim < 0.01) {
       const scale = targetSize / maxDim;
-      console.log(`📏 Normalisation du modèle: taille=${maxDim.toFixed(2)}, facteur=${scale.toFixed(4)}`);
       
       model.scale.set(scale, scale, scale);
       
@@ -554,9 +553,8 @@ async function applyZipTexturesToThree(model, virtualFS) {
   let texturesLoaded = 0;
   const availableTextures = virtualFS.getTextureFiles();
 
-  console.log('🔍 ===== TEXTURES DISPONIBLES =====');
-  availableTextures.forEach((t, index) => console.log(`  ${index + 1}. ${t.filename}`));
-  console.log('===================================\n');
+  
+ 
 
   const usedTextures = new Set();
   const textureCache = new Map();
@@ -610,7 +608,6 @@ async function applyZipTexturesToThree(model, virtualFS) {
     }
   });
 
-  console.log(`🔍 Traitement de ${materialEntries.length} matériaux\n`);
 
   for (const { material, meshes } of materialEntries) {
     if (!material) continue;
@@ -626,12 +623,9 @@ async function applyZipTexturesToThree(model, virtualFS) {
       isPhong = true;
     }
 
-    console.log(`📦 ===== MATÉRIAU: ${material.name || 'sans nom'} (${material.type}) =====`);
-    console.log(`  - meshes utilisant ce matériau: ${meshes.map(m => m.name || '(sans nom)').join(', ')}`);
 
     // Convertir Phong en Standard si nécessaire
     if (isPhong && !isStandard) {
-      console.log(`🔄 Conversion de MeshPhongMaterial en MeshStandardMaterial`);
 
       try {
         targetMaterial = new THREE.MeshStandardMaterial();
@@ -657,7 +651,6 @@ async function applyZipTexturesToThree(model, virtualFS) {
         isStandard = true;
         isPhong = false;
         
-        console.log(`  ✅ Matériau converti en MeshStandardMaterial`);
       } catch (error) {
         console.warn('Erreur lors de la conversion du matériau:', error);
         targetMaterial = new THREE.MeshStandardMaterial({
@@ -672,7 +665,6 @@ async function applyZipTexturesToThree(model, virtualFS) {
 
     // Si ce n'est pas un Standard, on le convertit
     if (!isStandard && !isPhong) {
-      console.log(`🔄 Conversion de ${material.type} en MeshStandardMaterial`);
       try {
         targetMaterial = new THREE.MeshStandardMaterial();
         if (material.color) targetMaterial.color.copy(material.color);
@@ -701,8 +693,6 @@ async function applyZipTexturesToThree(model, virtualFS) {
       .filter(Boolean)
       .flatMap(n => tokenizeFilename(n));
 
-    console.log(`  - tokens de contexte: [${contextTokens.join(', ') || 'aucun'}]`);
-
     // Résoudre l'assignation des textures en fonction du type de matériau
     const assignment = resolveTextureAssignment(
       availableTextures,
@@ -721,13 +711,11 @@ async function applyZipTexturesToThree(model, virtualFS) {
          !prop.startsWith('_'));
       
       if (!supportsProp) {
-        console.log(`  ⏭️ ${prop} non supporté par ${targetMaterial.type}, ignoré`);
         continue;
       }
 
       // Ne pas écraser une texture existante
       if (targetMaterial[prop] && targetMaterial[prop].isTexture) {
-        console.log(`    ⏭️ ${prop} déjà défini, ignoré`);
         continue;
       }
 
@@ -736,14 +724,11 @@ async function applyZipTexturesToThree(model, virtualFS) {
         pendingMaps[prop] = texture;
         texturesLoaded++;
         usedTextures.add(match.path);
-        console.log(`  ✅ Texture assignée: ${match.filename} -> ${prop}`);
       } else {
-        console.log(`  ❌ Échec chargement pour ${prop} (${match.filename})`);
       }
     }
 
     if (Object.keys(pendingMaps).length === 0) {
-      console.log(`  ⚠️ Aucune texture trouvée pour ce matériau`);
     }
 
     try {
@@ -779,10 +764,8 @@ async function applyZipTexturesToThree(model, virtualFS) {
       console.warn('Erreur lors de l\'assignation du matériau:', error);
     }
 
-    console.log('');
   }
 
-  console.log(`✅ ${texturesLoaded} textures chargées au total`);
   return texturesLoaded;
 }
 // ============ CHARGEMENT DU MODÈLE AVEC VFS ============
@@ -796,7 +779,6 @@ async function loadModelFromZip(zipFile, virtualFS, selectedFile) {
   let modelFormat = null;
 
   const fileKeys = Object.keys(zipFile.files);
-  console.log('📁 Fichiers dans le ZIP:', fileKeys);
 
   if (!modelFile) {
     const priority = ['glb', 'gltf', 'fbx', 'obj', 'stl'];
@@ -820,7 +802,6 @@ async function loadModelFromZip(zipFile, virtualFS, selectedFile) {
     throw new Error('Aucun fichier modèle trouvé dans le ZIP');
   }
 
-  console.log(`📦 Fichier modèle trouvé: ${modelFile} (${modelFormat})`);
 
   const fileData = await zipFile.files[modelFile].async('arraybuffer');
   const fileBlob = new Blob([fileData]);
@@ -916,7 +897,6 @@ async function loadModelFromZip(zipFile, virtualFS, selectedFile) {
     }
 
     const normalizationResult = normalizeModelSize(model, TARGET_MODEL_SIZE);
-    console.log('📏 Résultat de la normalisation:', normalizationResult);
 
     return { model, format: modelFormat, normalizationResult };
 
@@ -1244,10 +1224,7 @@ const ThreeModelLoader = forwardRef(function ThreeModelLoader(
       const modelStats = calculateModelStats(modelData);
       setStats(modelStats);
 
-      console.log(`📊 Statistiques du modèle:`, modelStats);
-      console.log(`🖼️ ${texturesLoaded} textures appliquées`);
       if (normInfo) {
-        console.log(`📏 Normalisation: facteur=${normInfo.scale?.toFixed(4)}, taille originale=${normInfo.originalSize?.toFixed(2)} → ${normInfo.newSize?.toFixed(2)}`);
       }
 
       setTimeout(() => {
@@ -1283,7 +1260,6 @@ const ThreeModelLoader = forwardRef(function ThreeModelLoader(
         const timestamp = Date.now();
         const random = Math.random().toString(36).substring(2, 8);
         const url = `${API_BASE_URL}/assets/${assetId}/download?nocache=${timestamp}_${random}`;
-        console.log(`🔄 Tentative ${attempt}/${retries}: ${url}`);
         
         const response = await fetch(url, {
           method: 'GET',
@@ -1313,8 +1289,6 @@ const ThreeModelLoader = forwardRef(function ThreeModelLoader(
         if (blob.size === 0) {
           throw new Error('Le fichier téléchargé est vide');
         }
-
-        console.log(`✅ Téléchargement réussi (${(blob.size / 1024 / 1024).toFixed(2)} MB)`);
         return blob;
 
       } catch (error) {
@@ -1323,7 +1297,6 @@ const ThreeModelLoader = forwardRef(function ThreeModelLoader(
         
         if (attempt < retries) {
           const delay = Math.min(1000 * Math.pow(2, attempt - 1), 8000);
-          console.log(`Nouvelle tentative dans ${delay}ms...`);
           await new Promise(resolve => setTimeout(resolve, delay));
         }
       }
@@ -1369,7 +1342,6 @@ const ThreeModelLoader = forwardRef(function ThreeModelLoader(
 
         if (ext === 'zip') {
           try {
-            console.log('📦 Décompression du ZIP...');
             const zipFile = await JSZip.loadAsync(blob);
             
             if (!zipFile || !zipFile.files) {
@@ -1379,7 +1351,6 @@ const ThreeModelLoader = forwardRef(function ThreeModelLoader(
             const virtualFS = new VirtualFileSystem();
             
             const fileKeys = Object.keys(zipFile.files);
-            console.log(`📁 ${fileKeys.length} fichiers trouvés dans le ZIP`);
             
             for (const relativePath of fileKeys) {
               const file = zipFile.files[relativePath];
@@ -1389,10 +1360,7 @@ const ThreeModelLoader = forwardRef(function ThreeModelLoader(
             }
 
             virtualFSRef.current = virtualFS;
-
-            console.log('📁 Fichiers dans le ZIP:');
             const allFiles = virtualFS.getAllFiles();
-            allFiles.forEach(path => console.log(`  - ${path}`));
 
             let selectedFile = null;
             if (selectedZipFile) {
@@ -1414,7 +1382,6 @@ const ThreeModelLoader = forwardRef(function ThreeModelLoader(
           return;
         }
 
-        console.log(`🔄 Chargement du fichier: ${fileName}`);
         const fileUrl = URL.createObjectURL(blob);
 
         try {
@@ -1498,7 +1465,6 @@ const ThreeModelLoader = forwardRef(function ThreeModelLoader(
           }
 
           const normalizationResult = normalizeModelSize(modelData, TARGET_MODEL_SIZE);
-          console.log('📏 Résultat de la normalisation:', normalizationResult);
 
           handleModelLoaded(modelData, 0, normalizationResult);
 
@@ -1794,7 +1760,6 @@ export default function ModelViewerThree({
   }, [assetId, token, assetExt, assetData]);
 
   const handleModelLoad = () => {
-    console.log('✅ Modèle chargé avec succès');
     setModelLoaded(true);
     setLoading(false);
     setWebGLError(null);
