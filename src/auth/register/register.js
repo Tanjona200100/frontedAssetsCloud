@@ -160,7 +160,7 @@ const Register = () => {
       const userData = {
         first_name: formData.first_name.trim(),
         last_name: formData.last_name.trim(),
-        email: formData.email.trim().toLowerCase(),
+        email: formData.email.trim(),
         password: formData.password,
         role: formData.role,
       };

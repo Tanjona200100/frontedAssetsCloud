@@ -5,6 +5,7 @@ import Login from './auth/login/login';
 import AdminDashboard from './pages/AdminDashboard';
 import UserDashboard from './pages/UserDashboard';
 import Register from './auth/register/register';
+import ResetPassword from './auth/reset-password/ResetPassword';
 
 // Composant pour les routes protégées
 const ProtectedRoute = ({ children }) => {
@@ -119,6 +120,15 @@ function App() {
             element={
               <PublicRoute>
                 <Register />
+              </PublicRoute>
+            } 
+          />
+
+          <Route 
+            path="/reset-password" 
+            element={
+              <PublicRoute>
+                <ResetPassword />
               </PublicRoute>
             } 
           />
