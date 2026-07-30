@@ -20,24 +20,27 @@ export const useFetchAssets = (filters, limit, page) => {
         throw new Error('Non authentifié');
       }
 
-      const buildQueryParams = (extra = {}) => {
-        const params = new URLSearchParams();
-        params.set('page', pageNum);
-        params.set('limit', limit);
+     // components/AdminDashboard/AssetsPanel/hooks.js
 
-        if (filters.search) params.set('search', filters.search);
-        if (filters.visibility) params.set('visibility', filters.visibility);
-        if (filters.file_type) params.set('file_type', filters.file_type);
-        if (filters.created_by) params.set('created_by', filters.created_by);
-        if (filters.date_from) params.set('date_from', filters.date_from);
-        if (filters.date_to) params.set('date_to', filters.date_to);
+const buildQueryParams = (extra = {}) => {
+  const params = new URLSearchParams();
+  params.set('page', pageNum);
+  params.set('limit', limit);
 
-        Object.entries(extra).forEach(([key, value]) => {
-          if (value) params.set(key, value);
-        });
+  if (filters.search) params.set('search', filters.search);
+  if (filters.visibility) params.set('visibility', filters.visibility);
+  if (filters.file_type) params.set('file_type', filters.file_type);
+  // ✅ CORRECTION : Utiliser le bon nom de paramètre
+  if (filters.created_by) params.set('user_id', filters.created_by); // ou 'created_by_id' ou 'creator_id'
+  if (filters.date_from) params.set('date_from', filters.date_from);
+  if (filters.date_to) params.set('date_to', filters.date_to);
 
-        return params.toString();
-      };
+  Object.entries(extra).forEach(([key, value]) => {
+    if (value) params.set(key, value);
+  });
+
+  return params.toString();
+};
 
       let url;
       if (filters.category && filters.project) {
